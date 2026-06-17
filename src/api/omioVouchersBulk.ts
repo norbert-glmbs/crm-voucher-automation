@@ -1,4 +1,6 @@
-import { readFile } from 'node:fs/promises';
+import { Buffer } from 'node:buffer';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 
 export type OmioVouchersBulkJobBody = {
   batchSize: number;
@@ -34,9 +36,29 @@ export type OmioVouchersBulkJobCompletionConfig =
     onWaiting?: (jobStatus: string, pollIntervalMs: number) => void;
   };
 
+export type OmioVouchersBulkJobDownloadConfig =
+  OmioVouchersBulkJobStatusConfig & {
+    outputPath: string;
+    maxAttempts?: number;
+    retryDelayMs?: number;
+    wait?: (durationMs: number) => Promise<void>;
+    onRetry?: (
+      error: Error,
+      attempt: number,
+      maxAttempts: number,
+      retryDelayMs: number,
+    ) => void;
+  };
+
 export type OmioVouchersBulkJobResponse = {
   status: number;
   body: unknown;
+};
+
+export type OmioVouchersBulkJobDownload = {
+  status: number;
+  outputPath: string;
+  byteLength: number;
 };
 
 type FetchRequestInit = {
@@ -50,6 +72,7 @@ type FetchResponseLike = {
   status: number;
   statusText?: string;
   text: () => Promise<string>;
+  arrayBuffer?: () => Promise<ArrayBuffer>;
 };
 
 type FetchLike = (
@@ -86,6 +109,8 @@ const APPROVE_VOUCHERS_BULK_JOB_BODY = {
 const EXPECTED_APPROVAL_JOB_STATUS = 'PENDING';
 const COMPLETED_JOB_STATUS = 'COMPLETED';
 const DEFAULT_COMPLETION_POLL_INTERVAL_MS = 5_000;
+const DEFAULT_DOWNLOAD_MAX_ATTEMPTS = 3;
+const DEFAULT_DOWNLOAD_RETRY_DELAY_MS = 5_000;
 
 export async function loadVouchersBulkJobBody(
   filePath = DEFAULT_VOUCHERS_BULK_JOB_BODY_PATH,
@@ -224,6 +249,35 @@ export async function waitForOmioVouchersBulkJobCompletion(
   }
 }
 
+export async function downloadOmioVouchersBulkJobVouchers(
+  config: OmioVouchersBulkJobDownloadConfig,
+  fetcher: FetchLike = defaultFetch,
+): Promise<OmioVouchersBulkJobDownload> {
+  const maxAttempts = config.maxAttempts ?? DEFAULT_DOWNLOAD_MAX_ATTEMPTS;
+  const retryDelayMs = config.retryDelayMs ?? DEFAULT_DOWNLOAD_RETRY_DELAY_MS;
+  const wait = config.wait ?? sleep;
+  let lastError: Error | undefined;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await downloadOmioVouchersBulkJobVouchersOnce(config, fetcher);
+    } catch (error) {
+      lastError = toError(error);
+
+      if (attempt >= maxAttempts) {
+        break;
+      }
+
+      config.onRetry?.(lastError, attempt, maxAttempts, retryDelayMs);
+      await wait(retryDelayMs);
+    }
+  }
+
+  throw new Error(
+    `Omio vouchers bulk job vouchers download failed after ${maxAttempts} attempt(s): ${lastError?.message}`,
+  );
+}
+
 export function readOmioVouchersBulkJobId(body: unknown): string {
   if (isRecord(body)) {
     if (typeof body.jobId === 'string' && body.jobId) {
@@ -238,18 +292,78 @@ export function readOmioVouchersBulkJobId(body: unknown): string {
   throw new Error('Omio vouchers bulk job response did not include jobId');
 }
 
+export function buildOmioVouchersBulkJobVouchersUrl(
+  baseUrl: string,
+  jobId: string,
+): string {
+  return new URL(
+    `${buildOmioVouchersBulkJobPath(jobId)}/vouchers`,
+    ensureTrailingSlash(baseUrl),
+  ).toString();
+}
+
 export function buildOmioVouchersBulkJobUrl(
   baseUrl: string,
   jobId?: string,
 ): string {
   const path = jobId
-    ? `private/v3/jobs/vouchers-bulk/${encodeURIComponent(jobId)}`
+    ? buildOmioVouchersBulkJobPath(jobId)
     : 'private/v3/jobs/vouchers-bulk';
 
   return new URL(
     path,
     ensureTrailingSlash(baseUrl),
   ).toString();
+}
+
+async function downloadOmioVouchersBulkJobVouchersOnce(
+  config: OmioVouchersBulkJobDownloadConfig,
+  fetcher: FetchLike,
+): Promise<OmioVouchersBulkJobDownload> {
+  const response = await fetcher(
+    buildOmioVouchersBulkJobVouchersUrl(config.baseUrl, config.jobId),
+    {
+      method: 'GET',
+      headers: {
+        Accept: '*/*',
+        Authorization: `Bearer ${config.accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const responseText = await response.text();
+    const statusText = response.statusText ? ` ${response.statusText}` : '';
+
+    throw new Error(
+      `Omio vouchers bulk job vouchers download request failed with status ${response.status}${statusText}: ${responseText}`,
+    );
+  }
+
+  if (!response.arrayBuffer) {
+    throw new Error(
+      'Omio vouchers bulk job vouchers download response did not include file content',
+    );
+  }
+
+  const fileContent = Buffer.from(await response.arrayBuffer());
+
+  if (fileContent.byteLength === 0) {
+    throw new Error('Omio vouchers bulk job vouchers download was empty');
+  }
+
+  await mkdir(dirname(config.outputPath), { recursive: true });
+  await writeFile(config.outputPath, fileContent);
+
+  return {
+    status: response.status,
+    outputPath: config.outputPath,
+    byteLength: fileContent.byteLength,
+  };
+}
+
+function buildOmioVouchersBulkJobPath(jobId: string): string {
+  return `private/v3/jobs/vouchers-bulk/${encodeURIComponent(jobId)}`;
 }
 
 function readOmioVouchersBulkJobStatus(body: unknown, context: string): string {
@@ -519,6 +633,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function hasField(record: Record<string, unknown>, fieldName: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, fieldName);
+}
+
+function toError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 async function defaultFetch(

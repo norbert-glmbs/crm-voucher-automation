@@ -1,9 +1,12 @@
-import { writeFile } from 'node:fs/promises';
+import { Buffer } from 'node:buffer';
+import { readFile, writeFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import {
   approveOmioVouchersBulkJob,
+  buildOmioVouchersBulkJobVouchersUrl,
   buildOmioVouchersBulkJobUrl,
   createOmioVouchersBulkJob,
+  downloadOmioVouchersBulkJobVouchers,
   getOmioVouchersBulkJob,
   loadVouchersBulkJobBody,
   readOmioVouchersBulkJobId,
@@ -51,6 +54,15 @@ const FIXED_VOUCHERS_BULK_BODY = {
   },
 };
 
+function textArrayBuffer(value: string): ArrayBuffer {
+  const bytes = Uint8Array.from(Buffer.from(value));
+
+  return bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  );
+}
+
 test('builds the Omio vouchers bulk job URL', () => {
   expect(buildOmioVouchersBulkJobUrl('https://www.omio.com/vouchers')).toBe(
     'https://www.omio.com/vouchers/private/v3/jobs/vouchers-bulk',
@@ -65,6 +77,17 @@ test('builds the Omio vouchers bulk job URL with a job id', () => {
     ),
   ).toBe(
     'https://www.omio.com/vouchers/private/v3/jobs/vouchers-bulk/bulk%2Fjob%20123',
+  );
+});
+
+test('builds the Omio vouchers bulk job vouchers download URL', () => {
+  expect(
+    buildOmioVouchersBulkJobVouchersUrl(
+      'https://www.omio.com/vouchers',
+      'bulk/job 123',
+    ),
+  ).toBe(
+    'https://www.omio.com/vouchers/private/v3/jobs/vouchers-bulk/bulk%2Fjob%20123/vouchers',
   );
 });
 
@@ -547,6 +570,181 @@ test('fails clearly when polled Omio vouchers bulk job has no status', async () 
     ),
   ).rejects.toThrow(
     'Omio vouchers bulk job status response did not include status',
+  );
+});
+
+test('downloads Omio vouchers bulk job vouchers to a file', async ({}, testInfo) => {
+  const calls: Array<{
+    url: string;
+    init: {
+      method: string;
+      headers: Record<string, string>;
+      body?: string;
+    };
+  }> = [];
+  const outputPath = testInfo.outputPath('vouchers.csv');
+
+  const download = await downloadOmioVouchersBulkJobVouchers(
+    {
+      baseUrl: 'https://www.omio.com.qa.goeuro.ninja/vouchers',
+      accessToken: 'access-token-123',
+      jobId: 'bulk-job-123',
+      outputPath,
+    },
+    async (url, init) => {
+      calls.push({ url, init });
+
+      return {
+        ok: true,
+        status: 200,
+        text: async () => '',
+        arrayBuffer: async () => textArrayBuffer('voucher_id\nABC123\n'),
+      };
+    },
+  );
+
+  await expect(readFile(outputPath, 'utf8')).resolves.toBe(
+    'voucher_id\nABC123\n',
+  );
+  expect(download).toEqual({
+    status: 200,
+    outputPath,
+    byteLength: 18,
+  });
+  expect(calls).toEqual([
+    {
+      url: 'https://www.omio.com.qa.goeuro.ninja/vouchers/private/v3/jobs/vouchers-bulk/bulk-job-123/vouchers',
+      init: {
+        method: 'GET',
+        headers: {
+          Accept: '*/*',
+          Authorization: 'Bearer access-token-123',
+        },
+      },
+    },
+  ]);
+});
+
+test('retries Omio vouchers bulk job vouchers download before succeeding', async ({}, testInfo) => {
+  const waitedMs: number[] = [];
+  const retryLogs: Array<{
+    message: string;
+    attempt: number;
+    maxAttempts: number;
+    retryDelayMs: number;
+  }> = [];
+  const outputPath = testInfo.outputPath('retried-vouchers.csv');
+  let calls = 0;
+
+  const download = await downloadOmioVouchersBulkJobVouchers(
+    {
+      baseUrl: 'https://www.omio.com.qa.goeuro.ninja/vouchers',
+      accessToken: 'access-token-123',
+      jobId: 'bulk-job-123',
+      outputPath,
+      maxAttempts: 3,
+      retryDelayMs: 25,
+      wait: async (durationMs) => {
+        waitedMs.push(durationMs);
+      },
+      onRetry: (error, attempt, maxAttempts, retryDelayMs) => {
+        retryLogs.push({
+          message: error.message,
+          attempt,
+          maxAttempts,
+          retryDelayMs,
+        });
+      },
+    },
+    async () => {
+      calls += 1;
+
+      if (calls === 1) {
+        return {
+          ok: false,
+          status: 404,
+          statusText: 'Not Found',
+          text: async () => 'file not ready',
+        };
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        text: async () => '',
+        arrayBuffer: async () => textArrayBuffer('voucher_id\nABC123\n'),
+      };
+    },
+  );
+
+  expect(download).toEqual({
+    status: 200,
+    outputPath,
+    byteLength: 18,
+  });
+  expect(calls).toBe(2);
+  expect(waitedMs).toEqual([25]);
+  expect(retryLogs).toEqual([
+    {
+      message:
+        'Omio vouchers bulk job vouchers download request failed with status 404 Not Found: file not ready',
+      attempt: 1,
+      maxAttempts: 3,
+      retryDelayMs: 25,
+    },
+  ]);
+});
+
+test('fails clearly after Omio vouchers bulk job vouchers download retries are exhausted', async ({}, testInfo) => {
+  const outputPath = testInfo.outputPath('failed-vouchers.csv');
+  let calls = 0;
+
+  await expect(
+    downloadOmioVouchersBulkJobVouchers(
+      {
+        baseUrl: 'https://www.omio.com/vouchers',
+        accessToken: 'access-token-123',
+        jobId: 'bulk-job-123',
+        outputPath,
+        maxAttempts: 2,
+        retryDelayMs: 1,
+        wait: async () => undefined,
+      },
+      async () => {
+        calls += 1;
+
+        return {
+          ok: false,
+          status: 500,
+          statusText: 'Internal Server Error',
+          text: async () => 'unavailable',
+        };
+      },
+    ),
+  ).rejects.toThrow(
+    'Omio vouchers bulk job vouchers download failed after 2 attempt(s): Omio vouchers bulk job vouchers download request failed with status 500 Internal Server Error: unavailable',
+  );
+  expect(calls).toBe(2);
+});
+
+test('fails clearly when Omio vouchers bulk job vouchers download has no file content', async ({}, testInfo) => {
+  await expect(
+    downloadOmioVouchersBulkJobVouchers(
+      {
+        baseUrl: 'https://www.omio.com/vouchers',
+        accessToken: 'access-token-123',
+        jobId: 'bulk-job-123',
+        outputPath: testInfo.outputPath('missing-content.csv'),
+        maxAttempts: 1,
+      },
+      async () => ({
+        ok: true,
+        status: 200,
+        text: async () => '',
+      }),
+    ),
+  ).rejects.toThrow(
+    'Omio vouchers bulk job vouchers download response did not include file content',
   );
 });
 

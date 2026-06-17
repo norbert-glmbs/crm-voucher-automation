@@ -61,6 +61,12 @@ To use a different body file for a run:
 OMIO_VOUCHERS_BULK_BODY_PATH=path/to/body.json
 ```
 
+To download vouchers for an existing bulk job without creating a new batch:
+
+```bash
+OMIO_VOUCHERS_BULK_JOB_ID=job-id yarn omio:vouchers-bulk
+```
+
 Add new live automation steps as Playwright specs under `tests/manual`. The aggregate
 `braze:flow` command runs that folder, so new manual specs become part of the full
 flow automatically.
