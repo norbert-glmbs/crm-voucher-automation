@@ -25,9 +25,12 @@ Last updated: 2026-06-17
 - [x] Added console output for active voucher rows as `display name, remaining, total`.
 - [x] Added `MIN_CODES_THRESHOLD` configuration and filtering for active promotion-code lists whose remaining value is below the threshold.
 - [x] Added `OMIO_ENV` configuration for selecting the Omio voucher API base URL for QA or PROD.
-- [x] Added `OMIO_USER` and `OMIO_PASS` configuration for Omio client-credentials authentication.
+- [x] Added shared `LOGIN_USERNAME` and `PASSWORD` configuration for Braze login and Omio client-credentials authentication.
 - [x] Added Omio access-token request support for `POST /oauth/token?grant_type=client_credentials`.
 - [x] Added `yarn omio:auth` manual command that prints the returned `access_token`.
+- [x] Added editable Omio vouchers bulk job body in `config/vouchers-bulk-job.json`.
+- [x] Added Omio vouchers bulk job request support for `POST private/v3/jobs/vouchers-bulk`.
+- [x] Added `yarn omio:vouchers-bulk` manual command that authenticates and creates a vouchers bulk job.
 - [x] Added `yarn braze:vouchers` and `yarn braze:vouchers:headed` manual commands.
 - [x] Added mocked Playwright tests for native table and ARIA grid voucher extraction.
 - [x] Added `yarn braze:flow` and `yarn braze:flow:headed` to run every live manual Braze spec under `tests/manual`.

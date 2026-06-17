@@ -32,10 +32,6 @@ export async function requestOmioAccessToken(
   config: OmioAuthConfig,
   fetcher: FetchLike = defaultFetch,
 ): Promise<OmioAccessToken> {
-  var tokenUrl = buildOmioTokenUrl(config.baseUrl);
-  var user = config.username;
-  var password = config.password;
-  console.log(tokenUrl, user, password);
   const response = await fetcher(buildOmioTokenUrl(config.baseUrl), {
     method: 'POST',
     headers: {

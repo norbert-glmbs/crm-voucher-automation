@@ -26,13 +26,14 @@ Individual live steps are still available for debugging:
 yarn braze:login
 yarn braze:vouchers
 yarn omio:auth
+yarn omio:vouchers-bulk
 ```
 
-Live Braze commands require credentials and the target environment:
+Live commands require shared credentials and the target Braze environment:
 
 ```bash
-BRAZE_USERNAME=
-BRAZE_PASSWORD=
+LOGIN_USERNAME=
+PASSWORD=
 BRAZE_ENV_ID=
 ```
 
@@ -46,8 +47,18 @@ Voucher generation will use the Omio environment to choose the API base URL:
 
 ```bash
 OMIO_ENV=QA
-OMIO_USER=
-OMIO_PASS=
+```
+
+The Omio vouchers bulk job request body lives in:
+
+```text
+config/vouchers-bulk-job.json
+```
+
+To use a different body file for a run:
+
+```bash
+OMIO_VOUCHERS_BULK_BODY_PATH=path/to/body.json
 ```
 
 Add new live automation steps as Playwright specs under `tests/manual`. The aggregate

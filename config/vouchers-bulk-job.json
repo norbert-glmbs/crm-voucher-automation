@@ -1,0 +1,21 @@
+{
+  "batchSize": 1,
+  "uppercaseIds": false,
+  "template": {
+    "campaignName": "20260617_cs_all_promotional_1_eur_relative_unique__",
+    "currency": "EUR",
+    "type": "RELATIVE",
+    "expiresAt": "2026-06-24T08:43:31.935Z",
+    "maximumRedemption": 1,
+    "percentageReduction": 1,
+    "maxPrice": 100,
+    "includedCountries": [],
+    "excludedCountries": [],
+    "providers": [],
+    "carriers": [],
+    "allowedRedemptionPlatforms": ["ALL"],
+    "visibility": "PRIVATE",
+    "category": "GENERIC",
+    "allowedBookingDomains": ["TRAVEL"]
+  }
+}

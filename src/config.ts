@@ -31,8 +31,7 @@ const OMIO_VOUCHER_BASE_URLS: Record<OmioEnv, string> = {
 export function loadBrazeLoginConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): BrazeLoginConfig {
-  const username = requireEnv(env, 'BRAZE_USERNAME');
-  const password = requireEnv(env, 'BRAZE_PASSWORD');
+  const { username, password } = loadSharedCredentials(env);
   const envId = requireEnv(env, 'BRAZE_ENV_ID');
 
   return {
@@ -74,12 +73,13 @@ export function loadOmioVoucherApiConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): OmioVoucherApiConfig {
   const omioEnv = parseOmioEnv(requireEnv(env, 'OMIO_ENV'));
+  const { username, password } = loadSharedCredentials(env);
 
   return {
     omioEnv,
     baseUrl: buildOmioVouchersBaseUrl(omioEnv),
-    username: requireEnv(env, 'OMIO_USER'),
-    password: requireEnv(env, 'OMIO_PASS'),
+    username,
+    password,
   };
 }
 
@@ -111,6 +111,36 @@ export function buildBrazeVouchersUrl(
 
 export function buildOmioVouchersBaseUrl(omioEnv: OmioEnv): string {
   return OMIO_VOUCHER_BASE_URLS[omioEnv];
+}
+
+function loadSharedCredentials(env: NodeJS.ProcessEnv): {
+  username: string;
+  password: string;
+} {
+  return {
+    username: loadSharedUsername(env),
+    password: requireEnv(env, 'PASSWORD'),
+  };
+}
+
+function loadSharedUsername(env: NodeJS.ProcessEnv): string {
+  if (env.LOGIN_USERNAME) {
+    return env.LOGIN_USERNAME;
+  }
+
+  const username = env.USERNAME;
+
+  if (username && username !== env.USER && username !== env.LOGNAME) {
+    return username;
+  }
+
+  if (username) {
+    throw new Error(
+      'USERNAME resolved to the local shell user. Set LOGIN_USERNAME for the shared Braze/Omio login username.',
+    );
+  }
+
+  throw new Error('Missing required environment variable: LOGIN_USERNAME');
 }
 
 function requireEnv(env: NodeJS.ProcessEnv, key: string): string {

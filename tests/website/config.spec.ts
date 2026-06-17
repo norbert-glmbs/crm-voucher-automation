@@ -22,8 +22,8 @@ test('builds the Braze vouchers URL from the selected environment id', () => {
 
 test('loads Braze login config with an environment-specific target URL', () => {
   const config = loadBrazeLoginConfig({
-    BRAZE_USERNAME: 'operator@example.com',
-    BRAZE_PASSWORD: 'secret',
+    LOGIN_USERNAME: 'operator@example.com',
+    PASSWORD: 'secret',
     BRAZE_ENV_ID: 'staging-env',
   });
 
@@ -41,10 +41,54 @@ test('loads Braze login config with an environment-specific target URL', () => {
 test('requires a Braze environment id', () => {
   expect(() =>
     loadBrazeLoginConfig({
-      BRAZE_USERNAME: 'operator@example.com',
-      BRAZE_PASSWORD: 'secret',
+      LOGIN_USERNAME: 'operator@example.com',
+      PASSWORD: 'secret',
     }),
   ).toThrow('Missing required environment variable: BRAZE_ENV_ID');
+});
+
+test('requires a shared username for Braze login config', () => {
+  expect(() =>
+    loadBrazeLoginConfig({
+      PASSWORD: 'secret',
+      BRAZE_ENV_ID: 'staging-env',
+    }),
+  ).toThrow('Missing required environment variable: LOGIN_USERNAME');
+});
+
+test('requires a shared password for Braze login config', () => {
+  expect(() =>
+    loadBrazeLoginConfig({
+      LOGIN_USERNAME: 'operator@example.com',
+      BRAZE_ENV_ID: 'staging-env',
+    }),
+  ).toThrow('Missing required environment variable: PASSWORD');
+});
+
+test('accepts USERNAME as a fallback when it is explicitly supplied', () => {
+  const config = loadBrazeLoginConfig({
+    USERNAME: 'operator@example.com',
+    USER: 'local-user',
+    LOGNAME: 'local-user',
+    PASSWORD: 'secret',
+    BRAZE_ENV_ID: 'staging-env',
+  });
+
+  expect(config.username).toBe('operator@example.com');
+});
+
+test('rejects USERNAME when it resolves to the local shell user', () => {
+  expect(() =>
+    loadBrazeLoginConfig({
+      USERNAME: 'local-user',
+      USER: 'local-user',
+      LOGNAME: 'local-user',
+      PASSWORD: 'secret',
+      BRAZE_ENV_ID: 'staging-env',
+    }),
+  ).toThrow(
+    'USERNAME resolved to the local shell user. Set LOGIN_USERNAME for the shared Braze/Omio login username.',
+  );
 });
 
 test('loads the minimum codes threshold', () => {
@@ -77,8 +121,8 @@ test('loads Omio voucher API config for QA', () => {
   expect(
     loadOmioVoucherApiConfig({
       OMIO_ENV: 'QA',
-      OMIO_USER: 'client-id',
-      OMIO_PASS: 'client-secret',
+      LOGIN_USERNAME: 'client-id',
+      PASSWORD: 'client-secret',
     }),
   ).toEqual({
     omioEnv: 'QA',
@@ -92,8 +136,8 @@ test('loads Omio voucher API config for production', () => {
   expect(
     loadOmioVoucherApiConfig({
       OMIO_ENV: 'PROD',
-      OMIO_USER: 'client-id',
-      OMIO_PASS: 'client-secret',
+      LOGIN_USERNAME: 'client-id',
+      PASSWORD: 'client-secret',
     }),
   ).toEqual({
     omioEnv: 'PROD',
@@ -107,8 +151,8 @@ test('normalizes Omio environment casing', () => {
   expect(
     loadOmioVoucherApiConfig({
       OMIO_ENV: 'qa',
-      OMIO_USER: 'client-id',
-      OMIO_PASS: 'client-secret',
+      LOGIN_USERNAME: 'client-id',
+      PASSWORD: 'client-secret',
     }),
   ).toEqual({
     omioEnv: 'QA',
@@ -128,26 +172,26 @@ test('requires Omio environment to be QA or PROD', () => {
   expect(() =>
     loadOmioVoucherApiConfig({
       OMIO_ENV: 'STAGING',
-      OMIO_USER: 'client-id',
-      OMIO_PASS: 'client-secret',
+      LOGIN_USERNAME: 'client-id',
+      PASSWORD: 'client-secret',
     }),
   ).toThrow('OMIO_ENV must be QA or PROD');
 });
 
-test('requires an Omio username', () => {
+test('requires a shared username for Omio voucher API config', () => {
   expect(() =>
     loadOmioVoucherApiConfig({
       OMIO_ENV: 'QA',
-      OMIO_PASS: 'client-secret',
+      PASSWORD: 'client-secret',
     }),
-  ).toThrow('Missing required environment variable: OMIO_USER');
+  ).toThrow('Missing required environment variable: LOGIN_USERNAME');
 });
 
-test('requires an Omio password', () => {
+test('requires a shared password for Omio voucher API config', () => {
   expect(() =>
     loadOmioVoucherApiConfig({
       OMIO_ENV: 'QA',
-      OMIO_USER: 'client-id',
+      LOGIN_USERNAME: 'client-id',
     }),
-  ).toThrow('Missing required environment variable: OMIO_PASS');
+  ).toThrow('Missing required environment variable: PASSWORD');
 });
