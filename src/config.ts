@@ -10,10 +10,23 @@ export type BrazeLoginConfig = {
   navigationTimeoutMs: number;
 };
 
+export type OmioEnv = 'QA' | 'PROD';
+
+export type OmioVoucherApiConfig = {
+  omioEnv: OmioEnv;
+  baseUrl: string;
+  username: string;
+  password: string;
+};
+
 const DEFAULT_BRAZE_DASHBOARD_ORIGIN = 'https://dashboard-01.braze.com';
 const DEFAULT_AUTH_STATE_PATH = '.playwright/.auth/braze.json';
 const DEFAULT_MFA_TIMEOUT_MS = 120_000;
 const DEFAULT_NAVIGATION_TIMEOUT_MS = 30_000;
+const OMIO_VOUCHER_BASE_URLS: Record<OmioEnv, string> = {
+  QA: 'https://www.omio.com.qa.goeuro.ninja/vouchers',
+  PROD: 'https://www.omio.com/vouchers',
+};
 
 export function loadBrazeLoginConfig(
   env: NodeJS.ProcessEnv = process.env,
@@ -57,6 +70,19 @@ export function loadMinCodesThreshold(env: NodeJS.ProcessEnv = process.env): num
   );
 }
 
+export function loadOmioVoucherApiConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): OmioVoucherApiConfig {
+  const omioEnv = parseOmioEnv(requireEnv(env, 'OMIO_ENV'));
+
+  return {
+    omioEnv,
+    baseUrl: buildOmioVouchersBaseUrl(omioEnv),
+    username: requireEnv(env, 'OMIO_USER'),
+    password: requireEnv(env, 'OMIO_PASS'),
+  };
+}
+
 export function buildBrazeAppUsageUrl(
   envId: string,
   dashboardOrigin = DEFAULT_BRAZE_DASHBOARD_ORIGIN,
@@ -81,6 +107,10 @@ export function buildBrazeVouchersUrl(
   url.searchParams.set('locale', 'en');
 
   return url.toString();
+}
+
+export function buildOmioVouchersBaseUrl(omioEnv: OmioEnv): string {
+  return OMIO_VOUCHER_BASE_URLS[omioEnv];
 }
 
 function requireEnv(env: NodeJS.ProcessEnv, key: string): string {
@@ -125,4 +155,14 @@ function parsePositiveInteger(
   }
 
   return parsed;
+}
+
+function parseOmioEnv(value: string): OmioEnv {
+  const normalizedValue = value.toUpperCase();
+
+  if (normalizedValue === 'QA' || normalizedValue === 'PROD') {
+    return normalizedValue;
+  }
+
+  throw new Error('OMIO_ENV must be QA or PROD');
 }

@@ -2,14 +2,14 @@ import { expect, test } from '@playwright/test';
 import { loadBrazeLoginConfig } from '../../src/config';
 import { isAtTargetDestination, loginToBraze } from '../../src/website/auth';
 import {
-  brazeManualSkipMessage,
   getReadableFilePath,
-  shouldRunBrazeManualSpec,
-} from './support/brazeManual';
+  manualSkipMessage,
+  shouldRunManualSpec,
+} from './support/manualFlow';
 
 test.skip(
-  !shouldRunBrazeManualSpec('RUN_BRAZE_LOGIN'),
-  brazeManualSkipMessage('RUN_BRAZE_LOGIN', 'run the real Braze login flow'),
+  !shouldRunManualSpec('RUN_BRAZE_LOGIN'),
+  manualSkipMessage('RUN_BRAZE_LOGIN', 'run the real Braze login flow'),
 );
 
 test('logs into Braze app usage dashboard and stores auth state', async ({ browser }) => {

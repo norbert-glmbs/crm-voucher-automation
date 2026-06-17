@@ -9,6 +9,7 @@
     "braze:login:headed": "RUN_BRAZE_LOGIN=true playwright test tests/manual/braze-login.spec.ts --project=chromium --headed",
     "braze:vouchers": "RUN_BRAZE_VOUCHERS=true playwright test tests/manual/braze-vouchers.spec.ts --project=chromium",
     "braze:vouchers:headed": "RUN_BRAZE_VOUCHERS=true playwright test tests/manual/braze-vouchers.spec.ts --project=chromium --headed",
+    "omio:auth": "RUN_OMIO_AUTH=true playwright test tests/manual/omio-auth.spec.ts --project=chromium",
     "braze:flow": "RUN_BRAZE_FLOW=true playwright test tests/manual --project=chromium --workers=1",
     "braze:flow:headed": "RUN_BRAZE_FLOW=true playwright test tests/manual --project=chromium --workers=1 --headed"
   },

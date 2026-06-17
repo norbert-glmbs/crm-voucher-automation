@@ -3,14 +3,14 @@ import { loadBrazeLoginConfig, loadMinCodesThreshold } from '../../src/config';
 import { isAtTargetDestination, loginToBraze } from '../../src/website/auth';
 import { printActiveVoucherRowsBelowThresholdFromBraze } from '../../src/website/vouchers';
 import {
-  brazeManualSkipMessage,
   getReadableFilePath,
-  shouldRunBrazeManualSpec,
-} from './support/brazeManual';
+  manualSkipMessage,
+  shouldRunManualSpec,
+} from './support/manualFlow';
 
 test.skip(
-  !shouldRunBrazeManualSpec('RUN_BRAZE_VOUCHERS'),
-  brazeManualSkipMessage('RUN_BRAZE_VOUCHERS', 'scan real Braze vouchers'),
+  !shouldRunManualSpec('RUN_BRAZE_VOUCHERS'),
+  manualSkipMessage('RUN_BRAZE_VOUCHERS', 'scan real Braze vouchers'),
 );
 
 test('logs into Braze and prints active voucher balances', async ({ browser }) => {

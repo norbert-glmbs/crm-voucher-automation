@@ -24,6 +24,10 @@ Last updated: 2026-06-17
 - [x] Implemented active voucher table scanning that reads `Display Name`, `Remaining`, `Total`, and `Status` columns.
 - [x] Added console output for active voucher rows as `display name, remaining, total`.
 - [x] Added `MIN_CODES_THRESHOLD` configuration and filtering for active promotion-code lists whose remaining value is below the threshold.
+- [x] Added `OMIO_ENV` configuration for selecting the Omio voucher API base URL for QA or PROD.
+- [x] Added `OMIO_USER` and `OMIO_PASS` configuration for Omio client-credentials authentication.
+- [x] Added Omio access-token request support for `POST /oauth/token?grant_type=client_credentials`.
+- [x] Added `yarn omio:auth` manual command that prints the returned `access_token`.
 - [x] Added `yarn braze:vouchers` and `yarn braze:vouchers:headed` manual commands.
 - [x] Added mocked Playwright tests for native table and ARIA grid voucher extraction.
 - [x] Added `yarn braze:flow` and `yarn braze:flow:headed` to run every live manual Braze spec under `tests/manual`.

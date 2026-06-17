@@ -1,20 +1,17 @@
 import { constants } from 'node:fs';
 import { access } from 'node:fs/promises';
 
-const BRAZE_FLOW_ENV_VAR = 'RUN_BRAZE_FLOW';
+const FULL_FLOW_ENV_VARS = ['RUN_BRAZE_FLOW'];
 
-export function shouldRunBrazeManualSpec(specificEnvVar: string): boolean {
+export function shouldRunManualSpec(specificEnvVar: string): boolean {
   return (
     isEnabled(process.env[specificEnvVar]) ||
-    isEnabled(process.env[BRAZE_FLOW_ENV_VAR])
+    FULL_FLOW_ENV_VARS.some((envVar) => isEnabled(process.env[envVar]))
   );
 }
 
-export function brazeManualSkipMessage(
-  specificEnvVar: string,
-  action: string,
-): string {
-  return `Set ${specificEnvVar}=true to ${action}, or ${BRAZE_FLOW_ENV_VAR}=true to run the full Braze flow.`;
+export function manualSkipMessage(specificEnvVar: string, action: string): string {
+  return `Set ${specificEnvVar}=true to ${action}, or RUN_BRAZE_FLOW=true to run the full flow.`;
 }
 
 export async function getReadableFilePath(
