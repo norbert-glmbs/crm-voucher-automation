@@ -3,6 +3,7 @@ import {
   buildBrazeAppUsageUrl,
   buildBrazeVouchersUrl,
   loadBrazeLoginConfig,
+  loadMinCodesThreshold,
 } from '../../src/config';
 
 test('builds the Braze app usage URL from the selected environment id', () => {
@@ -42,4 +43,20 @@ test('requires a Braze environment id', () => {
       BRAZE_PASSWORD: 'secret',
     }),
   ).toThrow('Missing required environment variable: BRAZE_ENV_ID');
+});
+
+test('loads the minimum codes threshold', () => {
+  expect(loadMinCodesThreshold({ MIN_CODES_THRESHOLD: '50' })).toBe(50);
+});
+
+test('requires a minimum codes threshold', () => {
+  expect(() => loadMinCodesThreshold({})).toThrow(
+    'Missing required environment variable: MIN_CODES_THRESHOLD',
+  );
+});
+
+test('requires the minimum codes threshold to be a positive integer', () => {
+  expect(() => loadMinCodesThreshold({ MIN_CODES_THRESHOLD: '0' })).toThrow(
+    'MIN_CODES_THRESHOLD must be a positive integer',
+  );
 });

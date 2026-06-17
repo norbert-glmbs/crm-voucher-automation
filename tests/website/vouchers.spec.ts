@@ -1,7 +1,10 @@
 import { expect, test } from '@playwright/test';
 import {
+  filterActiveVoucherRowsBelowThreshold,
   formatActiveVoucherRow,
+  parseVoucherCount,
   printActiveVoucherRows,
+  printActiveVoucherRowsBelowThreshold,
   readActiveVoucherRows,
 } from '../../src/website/vouchers';
 
@@ -90,7 +93,7 @@ test('reads active voucher rows from an ARIA grid', async ({ page }) => {
   ]);
 });
 
-test('prints active voucher rows as display name, remaining, total', () => {
+test('prints active voucher rows', () => {
   const output: string[] = [];
 
   printActiveVoucherRows(
@@ -109,7 +112,11 @@ test('prints active voucher rows as display name, remaining, total', () => {
     (message) => output.push(message),
   );
 
-  expect(output).toEqual(['Summer Reward, 45, 100', 'VIP Voucher, 2,000, 5,000']);
+  expect(output).toEqual([
+    'All ACTIVE Promotion Codes',
+    'Display Name[Summer Reward] | Remaining Vouchers[45] | Total Vouchers[100]',
+    'Display Name[VIP Voucher] | Remaining Vouchers[2,000] | Total Vouchers[5,000]',
+  ]);
 });
 
 test('formats one active voucher row', () => {
@@ -119,5 +126,81 @@ test('formats one active voucher row', () => {
       remaining: '8',
       total: '10',
     }),
-  ).toBe('Welcome Credit, 8, 10');
+  ).toBe('Display Name[Welcome Credit] | Remaining Vouchers[8] | Total Vouchers[10]');
+});
+
+test('filters active voucher rows below the minimum codes threshold', () => {
+  expect(
+    filterActiveVoucherRowsBelowThreshold(
+      [
+        {
+          displayName: 'Summer Reward',
+          remaining: '45',
+          total: '100',
+        },
+        {
+          displayName: 'VIP Voucher',
+          remaining: '2,000',
+          total: '5,000',
+        },
+        {
+          displayName: 'Welcome Credit',
+          remaining: '8',
+          total: '10',
+        },
+      ],
+      50,
+    ),
+  ).toEqual([
+    {
+      displayName: 'Summer Reward',
+      remaining: '45',
+      total: '100',
+    },
+    {
+      displayName: 'Welcome Credit',
+      remaining: '8',
+      total: '10',
+    },
+  ]);
+});
+
+test('prints active voucher rows below the minimum codes threshold', () => {
+  const output: string[] = [];
+
+  printActiveVoucherRowsBelowThreshold(
+    [
+      {
+        displayName: 'Summer Reward',
+        remaining: '45',
+        total: '100',
+      },
+    ],
+    50,
+    (message) => output.push(message),
+  );
+
+  expect(output).toEqual([
+    'ACTIVE Promotion Codes below MIN_CODES_THRESHOLD[50]',
+    'Display Name[Summer Reward] | Remaining Vouchers[45] | Total Vouchers[100]',
+  ]);
+});
+
+test('prints a clear message when no active voucher rows are below the threshold', () => {
+  const output: string[] = [];
+
+  printActiveVoucherRowsBelowThreshold([], 50, (message) => output.push(message));
+
+  expect(output).toEqual(['No ACTIVE Promotion Codes below MIN_CODES_THRESHOLD[50]']);
+});
+
+test('parses voucher counts with thousands separators', () => {
+  expect(parseVoucherCount('2,000')).toBe(2000);
+  expect(parseVoucherCount(' 45 ')).toBe(45);
+});
+
+test('fails clearly when a voucher count cannot be parsed', () => {
+  expect(() => parseVoucherCount('not available', 'VIP Voucher remaining')).toThrow(
+    'Unable to parse VIP Voucher remaining: not available',
+  );
 });

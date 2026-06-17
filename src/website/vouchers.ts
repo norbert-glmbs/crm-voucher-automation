@@ -29,6 +29,10 @@ type PrintActiveVoucherRowsOptions = {
   log?: (message: string) => void;
 };
 
+type PrintVoucherRowsBelowThresholdOptions = PrintActiveVoucherRowsOptions & {
+  minCodesThreshold: number;
+};
+
 const DEFAULT_NAVIGATION_TIMEOUT_MS = 30_000;
 const DEFAULT_TABLE_TIMEOUT_MS = 30_000;
 const REQUIRED_HEADERS = ['display name', 'remaining', 'total', 'status'];
@@ -43,6 +47,27 @@ export async function printActiveVoucherRowsFromBraze(
   printActiveVoucherRows(activeRows, options.log);
 
   return activeRows;
+}
+
+export async function printActiveVoucherRowsBelowThresholdFromBraze(
+  page: Page,
+  options: PrintVoucherRowsBelowThresholdOptions,
+): Promise<ActiveVoucherRow[]> {
+  await goToBrazeVouchersPage(page, options.vouchersUrl, options.navigationTimeoutMs);
+
+  const activeRows = await readActiveVoucherRows(page, options.tableTimeoutMs);
+  const rowsBelowThreshold = filterActiveVoucherRowsBelowThreshold(
+    activeRows,
+    options.minCodesThreshold,
+  );
+
+  printActiveVoucherRowsBelowThreshold(
+    rowsBelowThreshold,
+    options.minCodesThreshold,
+    options.log,
+  );
+
+  return rowsBelowThreshold;
 }
 
 export async function goToBrazeVouchersPage(
@@ -86,14 +111,57 @@ export function printActiveVoucherRows(
   rows: ActiveVoucherRow[],
   log: (message: string) => void = console.log,
 ): void {
-  log('All ACTIVE Promotion Codes')
+  log('All ACTIVE Promotion Codes');
+
+  for (const row of rows) {
+    log(formatActiveVoucherRow(row));
+  }
+}
+
+export function filterActiveVoucherRowsBelowThreshold(
+  rows: ActiveVoucherRow[],
+  minCodesThreshold: number,
+): ActiveVoucherRow[] {
+  return rows.filter(
+    (row) =>
+      parseVoucherCount(row.remaining, `${row.displayName} remaining`) <
+      minCodesThreshold,
+  );
+}
+
+export function printActiveVoucherRowsBelowThreshold(
+  rows: ActiveVoucherRow[],
+  minCodesThreshold: number,
+  log: (message: string) => void = console.log,
+): void {
+  if (rows.length === 0) {
+    log(`No ACTIVE Promotion Codes below MIN_CODES_THRESHOLD[${minCodesThreshold}]`);
+    return;
+  }
+
+  log(`ACTIVE Promotion Codes below MIN_CODES_THRESHOLD[${minCodesThreshold}]`);
+
   for (const row of rows) {
     log(formatActiveVoucherRow(row));
   }
 }
 
 export function formatActiveVoucherRow(row: ActiveVoucherRow): string {
-  return `Display Name[${row.displayName}] | Remaining Vouchers[${row.remaining}] | Total Vouchers[${row.total}]`;
+  return [
+    `Display Name[${row.displayName}]`,
+    `Remaining Vouchers[${row.remaining}]`,
+    `Total Vouchers[${row.total}]`,
+  ].join(' | ');
+}
+
+export function parseVoucherCount(value: string, fieldName = 'voucher count'): number {
+  const normalizedValue = value.replace(/[,\s]/g, '');
+
+  if (!/^\d+$/.test(normalizedValue)) {
+    throw new Error(`Unable to parse ${fieldName}: ${value}`);
+  }
+
+  return Number(normalizedValue);
 }
 
 async function readVoucherTableModel(

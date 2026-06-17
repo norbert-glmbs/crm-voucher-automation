@@ -23,6 +23,7 @@ Last updated: 2026-06-17
 - [x] Added Braze vouchers URL generation for `https://dashboard-01.braze.com/integrations/vouchers/vouchers/{envId}?locale=en`.
 - [x] Implemented active voucher table scanning that reads `Display Name`, `Remaining`, `Total`, and `Status` columns.
 - [x] Added console output for active voucher rows as `display name, remaining, total`.
+- [x] Added `MIN_CODES_THRESHOLD` configuration and filtering for active promotion-code lists whose remaining value is below the threshold.
 - [x] Added `yarn braze:vouchers` and `yarn braze:vouchers:headed` manual commands.
 - [x] Added mocked Playwright tests for native table and ARIA grid voucher extraction.
 - [x] Added `yarn braze:flow` and `yarn braze:flow:headed` to run every live manual Braze spec under `tests/manual`.

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
-import { loadBrazeLoginConfig } from '../../src/config';
+import { loadBrazeLoginConfig, loadMinCodesThreshold } from '../../src/config';
 import { isAtTargetDestination, loginToBraze } from '../../src/website/auth';
-import { printActiveVoucherRowsFromBraze } from '../../src/website/vouchers';
+import { printActiveVoucherRowsBelowThresholdFromBraze } from '../../src/website/vouchers';
 import {
   brazeManualSkipMessage,
   getReadableFilePath,
@@ -15,6 +15,7 @@ test.skip(
 
 test('logs into Braze and prints active voucher balances', async ({ browser }) => {
   const config = loadBrazeLoginConfig();
+  const minCodesThreshold = loadMinCodesThreshold();
   const existingAuthStatePath = await getReadableFilePath(config.authStatePath);
   const context = await browser.newContext(
     existingAuthStatePath ? { storageState: existingAuthStatePath } : {},
@@ -29,8 +30,9 @@ test('logs into Braze and prints active voucher balances', async ({ browser }) =
 
     expect(result.authStatePath).toBe(config.authStatePath);
 
-    await printActiveVoucherRowsFromBraze(page, {
+    await printActiveVoucherRowsBelowThresholdFromBraze(page, {
       vouchersUrl: config.vouchersUrl,
+      minCodesThreshold,
       navigationTimeoutMs: config.navigationTimeoutMs,
       tableTimeoutMs: config.navigationTimeoutMs,
     });

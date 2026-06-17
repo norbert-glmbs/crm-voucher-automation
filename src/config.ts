@@ -49,6 +49,14 @@ export function loadBrazeLoginConfig(
   };
 }
 
+export function loadMinCodesThreshold(env: NodeJS.ProcessEnv = process.env): number {
+  return parsePositiveInteger(
+    requireEnv(env, 'MIN_CODES_THRESHOLD'),
+    0,
+    'MIN_CODES_THRESHOLD',
+  );
+}
+
 export function buildBrazeAppUsageUrl(
   envId: string,
   dashboardOrigin = DEFAULT_BRAZE_DASHBOARD_ORIGIN,
