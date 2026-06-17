@@ -1,5 +1,6 @@
 export type BrazeLoginConfig = {
   targetUrl: string;
+  vouchersUrl: string;
   envId: string;
   username: string;
   password: string;
@@ -23,6 +24,10 @@ export function loadBrazeLoginConfig(
 
   return {
     targetUrl: buildBrazeAppUsageUrl(
+      envId,
+      env.BRAZE_DASHBOARD_ORIGIN || DEFAULT_BRAZE_DASHBOARD_ORIGIN,
+    ),
+    vouchersUrl: buildBrazeVouchersUrl(
       envId,
       env.BRAZE_DASHBOARD_ORIGIN || DEFAULT_BRAZE_DASHBOARD_ORIGIN,
     ),
@@ -50,6 +55,19 @@ export function buildBrazeAppUsageUrl(
 ): string {
   const url = new URL(
     `/dashboard/app_usage/${encodeURIComponent(envId)}`,
+    dashboardOrigin,
+  );
+  url.searchParams.set('locale', 'en');
+
+  return url.toString();
+}
+
+export function buildBrazeVouchersUrl(
+  envId: string,
+  dashboardOrigin = DEFAULT_BRAZE_DASHBOARD_ORIGIN,
+): string {
+  const url = new URL(
+    `/integrations/vouchers/vouchers/${encodeURIComponent(envId)}`,
     dashboardOrigin,
   );
   url.searchParams.set('locale', 'en');

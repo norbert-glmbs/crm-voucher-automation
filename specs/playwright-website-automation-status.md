@@ -20,12 +20,19 @@ Last updated: 2026-06-17
 - [x] Verified the environment-specific login/config tests with `yarn test`.
 - [x] Updated the manual Braze login command to reuse an existing saved auth state file before falling back to username/password login.
 - [x] Verified the auth-state reuse code compiles cleanly through `yarn test`.
+- [x] Added Braze vouchers URL generation for `https://dashboard-01.braze.com/integrations/vouchers/vouchers/{envId}?locale=en`.
+- [x] Implemented active voucher table scanning that reads `Display Name`, `Remaining`, `Total`, and `Status` columns.
+- [x] Added console output for active voucher rows as `display name, remaining, total`.
+- [x] Added `yarn braze:vouchers` and `yarn braze:vouchers:headed` manual commands.
+- [x] Added mocked Playwright tests for native table and ARIA grid voucher extraction.
+- [x] Added `yarn braze:flow` and `yarn braze:flow:headed` to run every live manual Braze spec under `tests/manual`.
+- [x] Added a shared manual-spec helper so individual live steps can run standalone or as part of the full Braze flow.
 
 ## Not Completed Yet
 
 - [ ] Verify the real Braze login flow with valid credentials and a real `BRAZE_ENV_ID`.
 - [ ] Confirm whether the real account requires MFA/CAPTCHA on every run.
-- [ ] Implement reading target numbers from the Braze app usage page.
+- [ ] Verify the real Braze vouchers page table selectors with valid credentials and a real `BRAZE_ENV_ID`.
 - [ ] Implement threshold rules.
 - [ ] Implement external API file download.
 - [ ] Implement file upload through the website UI.

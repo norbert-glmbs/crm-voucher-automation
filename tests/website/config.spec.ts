@@ -1,9 +1,19 @@
 import { expect, test } from '@playwright/test';
-import { buildBrazeAppUsageUrl, loadBrazeLoginConfig } from '../../src/config';
+import {
+  buildBrazeAppUsageUrl,
+  buildBrazeVouchersUrl,
+  loadBrazeLoginConfig,
+} from '../../src/config';
 
 test('builds the Braze app usage URL from the selected environment id', () => {
   expect(buildBrazeAppUsageUrl('production-env')).toBe(
     'https://dashboard-01.braze.com/dashboard/app_usage/production-env?locale=en',
+  );
+});
+
+test('builds the Braze vouchers URL from the selected environment id', () => {
+  expect(buildBrazeVouchersUrl('production-env')).toBe(
+    'https://dashboard-01.braze.com/integrations/vouchers/vouchers/production-env?locale=en',
   );
 });
 
@@ -20,6 +30,8 @@ test('loads Braze login config with an environment-specific target URL', () => {
     envId: 'staging-env',
     targetUrl:
       'https://dashboard-01.braze.com/dashboard/app_usage/staging-env?locale=en',
+    vouchersUrl:
+      'https://dashboard-01.braze.com/integrations/vouchers/vouchers/staging-env?locale=en',
   });
 });
 
