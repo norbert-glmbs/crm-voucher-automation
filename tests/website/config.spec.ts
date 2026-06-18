@@ -1,9 +1,12 @@
+import { writeFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import {
   buildBrazeAppUsageUrl,
+  buildBrazeEnvId,
   buildBrazeVouchersUrl,
   buildOmioVouchersBaseUrl,
   loadBrazeLoginConfig,
+  loadEnvFileIntoProcessEnv,
   loadMinCodesThreshold,
   loadOmioVoucherApiConfig,
 } from '../../src/config';
@@ -20,38 +23,105 @@ test('builds the Braze vouchers URL from the selected environment id', () => {
   );
 });
 
-test('loads Braze login config with an environment-specific target URL', () => {
+test('maps QA to the Braze QA environment id', () => {
+  expect(buildBrazeEnvId('QA')).toBe('592d2af81b0e4d67991edb6b');
+});
+
+test('maps production to the Braze production environment id', () => {
+  expect(buildBrazeEnvId('PROD')).toBe('577e3b2a56ec312e6058236f');
+});
+
+test(
+  'loads values from a dotenv file without overriding existing environment values',
+  async ({}, testInfo) => {
+    const env: NodeJS.ProcessEnv = {
+      ENV: 'PROD',
+    };
+    const envPath = testInfo.outputPath('config.env');
+
+    await writeFile(
+      envPath,
+      [
+        '# local automation config',
+        'ENV=QA',
+        'LOGIN_USERNAME=operator@example.com',
+        'PASSWORD="secret value"',
+        'MIN_CODES_THRESHOLD=50 # local threshold',
+        'export BRAZE_LOGIN_ALLOW_MANUAL_MFA=true',
+      ].join('\n'),
+      'utf8',
+    );
+
+    loadEnvFileIntoProcessEnv(envPath, env);
+
+    expect(env).toMatchObject({
+      ENV: 'PROD',
+      LOGIN_USERNAME: 'operator@example.com',
+      PASSWORD: 'secret value',
+      MIN_CODES_THRESHOLD: '50',
+      BRAZE_LOGIN_ALLOW_MANUAL_MFA: 'true',
+    });
+  },
+);
+
+test('loads Braze login config from ENV=QA', () => {
   const config = loadBrazeLoginConfig({
+    ENV: 'QA',
     LOGIN_USERNAME: 'operator@example.com',
     PASSWORD: 'secret',
-    BRAZE_ENV_ID: 'staging-env',
   });
 
   expect(config).toMatchObject({
     username: 'operator@example.com',
     password: 'secret',
-    envId: 'staging-env',
+    envId: '592d2af81b0e4d67991edb6b',
     targetUrl:
-      'https://dashboard-01.braze.com/dashboard/app_usage/staging-env?locale=en',
+      'https://dashboard-01.braze.com/dashboard/app_usage/592d2af81b0e4d67991edb6b?locale=en',
     vouchersUrl:
-      'https://dashboard-01.braze.com/integrations/vouchers/vouchers/staging-env?locale=en',
+      'https://dashboard-01.braze.com/integrations/vouchers/vouchers/592d2af81b0e4d67991edb6b?locale=en',
   });
 });
 
-test('requires a Braze environment id', () => {
+test('loads Braze login config from ENV=PROD', () => {
+  const config = loadBrazeLoginConfig({
+    ENV: 'PROD',
+    LOGIN_USERNAME: 'operator@example.com',
+    PASSWORD: 'secret',
+  });
+
+  expect(config).toMatchObject({
+    envId: '577e3b2a56ec312e6058236f',
+    targetUrl:
+      'https://dashboard-01.braze.com/dashboard/app_usage/577e3b2a56ec312e6058236f?locale=en',
+    vouchersUrl:
+      'https://dashboard-01.braze.com/integrations/vouchers/vouchers/577e3b2a56ec312e6058236f?locale=en',
+  });
+});
+
+test('requires an environment selector for Braze login config', () => {
   expect(() =>
     loadBrazeLoginConfig({
       LOGIN_USERNAME: 'operator@example.com',
       PASSWORD: 'secret',
     }),
-  ).toThrow('Missing required environment variable: BRAZE_ENV_ID');
+  ).toThrow('Missing required environment variable: ENV');
+});
+
+test('requires ENV to be QA or PROD for Braze login config', () => {
+  expect(() =>
+    loadBrazeLoginConfig({
+      ENV: 'STAGING',
+      LOGIN_USERNAME: 'operator@example.com',
+      PASSWORD: 'secret',
+    }),
+  ).toThrow('ENV must be QA or PROD');
 });
 
 test('requires a shared username for Braze login config', () => {
   expect(() =>
     loadBrazeLoginConfig({
+      ENV: 'QA',
       PASSWORD: 'secret',
-      BRAZE_ENV_ID: 'staging-env',
     }),
   ).toThrow('Missing required environment variable: LOGIN_USERNAME');
 });
@@ -59,19 +129,19 @@ test('requires a shared username for Braze login config', () => {
 test('requires a shared password for Braze login config', () => {
   expect(() =>
     loadBrazeLoginConfig({
+      ENV: 'QA',
       LOGIN_USERNAME: 'operator@example.com',
-      BRAZE_ENV_ID: 'staging-env',
     }),
   ).toThrow('Missing required environment variable: PASSWORD');
 });
 
 test('accepts USERNAME as a fallback when it is explicitly supplied', () => {
   const config = loadBrazeLoginConfig({
+    ENV: 'QA',
     USERNAME: 'operator@example.com',
     USER: 'local-user',
     LOGNAME: 'local-user',
     PASSWORD: 'secret',
-    BRAZE_ENV_ID: 'staging-env',
   });
 
   expect(config.username).toBe('operator@example.com');
@@ -80,11 +150,11 @@ test('accepts USERNAME as a fallback when it is explicitly supplied', () => {
 test('rejects USERNAME when it resolves to the local shell user', () => {
   expect(() =>
     loadBrazeLoginConfig({
+      ENV: 'QA',
       USERNAME: 'local-user',
       USER: 'local-user',
       LOGNAME: 'local-user',
       PASSWORD: 'secret',
-      BRAZE_ENV_ID: 'staging-env',
     }),
   ).toThrow(
     'USERNAME resolved to the local shell user. Set LOGIN_USERNAME for the shared Braze/Omio login username.',
@@ -108,9 +178,7 @@ test('requires the minimum codes threshold to be a positive integer', () => {
 });
 
 test('builds the Omio QA vouchers base URL', () => {
-  expect(buildOmioVouchersBaseUrl('QA')).toBe(
-    'https://www.omio.com.qa.goeuro.ninja/vouchers',
-  );
+  expect(buildOmioVouchersBaseUrl('QA')).toBe('http://localhost:8080/vouchers');
 });
 
 test('builds the Omio production vouchers base URL', () => {
@@ -120,13 +188,13 @@ test('builds the Omio production vouchers base URL', () => {
 test('loads Omio voucher API config for QA', () => {
   expect(
     loadOmioVoucherApiConfig({
-      OMIO_ENV: 'QA',
+      ENV: 'QA',
       LOGIN_USERNAME: 'client-id',
       PASSWORD: 'client-secret',
     }),
   ).toEqual({
     omioEnv: 'QA',
-    baseUrl: 'https://www.omio.com.qa.goeuro.ninja/vouchers',
+    baseUrl: 'http://localhost:8080/vouchers',
     username: 'client-id',
     password: 'client-secret',
   });
@@ -135,7 +203,7 @@ test('loads Omio voucher API config for QA', () => {
 test('loads Omio voucher API config for production', () => {
   expect(
     loadOmioVoucherApiConfig({
-      OMIO_ENV: 'PROD',
+      ENV: 'PROD',
       LOGIN_USERNAME: 'client-id',
       PASSWORD: 'client-secret',
     }),
@@ -147,41 +215,44 @@ test('loads Omio voucher API config for production', () => {
   });
 });
 
-test('normalizes Omio environment casing', () => {
+test('normalizes environment casing', () => {
   expect(
     loadOmioVoucherApiConfig({
-      OMIO_ENV: 'qa',
+      ENV: 'qa',
       LOGIN_USERNAME: 'client-id',
       PASSWORD: 'client-secret',
     }),
   ).toEqual({
     omioEnv: 'QA',
-    baseUrl: 'https://www.omio.com.qa.goeuro.ninja/vouchers',
+    baseUrl: 'http://localhost:8080/vouchers',
     username: 'client-id',
     password: 'client-secret',
   });
 });
 
-test('requires an Omio environment', () => {
-  expect(() => loadOmioVoucherApiConfig({})).toThrow(
-    'Missing required environment variable: OMIO_ENV',
-  );
-});
-
-test('requires Omio environment to be QA or PROD', () => {
+test('requires an environment selector for Omio voucher API config', () => {
   expect(() =>
     loadOmioVoucherApiConfig({
-      OMIO_ENV: 'STAGING',
       LOGIN_USERNAME: 'client-id',
       PASSWORD: 'client-secret',
     }),
-  ).toThrow('OMIO_ENV must be QA or PROD');
+  ).toThrow('Missing required environment variable: ENV');
+});
+
+test('requires ENV to be QA or PROD for Omio voucher API config', () => {
+  expect(() =>
+    loadOmioVoucherApiConfig({
+      ENV: 'STAGING',
+      LOGIN_USERNAME: 'client-id',
+      PASSWORD: 'client-secret',
+    }),
+  ).toThrow('ENV must be QA or PROD');
 });
 
 test('requires a shared username for Omio voucher API config', () => {
   expect(() =>
     loadOmioVoucherApiConfig({
-      OMIO_ENV: 'QA',
+      ENV: 'QA',
       PASSWORD: 'client-secret',
     }),
   ).toThrow('Missing required environment variable: LOGIN_USERNAME');
@@ -190,7 +261,7 @@ test('requires a shared username for Omio voucher API config', () => {
 test('requires a shared password for Omio voucher API config', () => {
   expect(() =>
     loadOmioVoucherApiConfig({
-      OMIO_ENV: 'QA',
+      ENV: 'QA',
       LOGIN_USERNAME: 'client-id',
     }),
   ).toThrow('Missing required environment variable: PASSWORD');

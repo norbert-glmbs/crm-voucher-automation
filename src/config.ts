@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 export type BrazeLoginConfig = {
   targetUrl: string;
   vouchersUrl: string;
@@ -23,16 +25,63 @@ const DEFAULT_BRAZE_DASHBOARD_ORIGIN = 'https://dashboard-01.braze.com';
 const DEFAULT_AUTH_STATE_PATH = '.playwright/.auth/braze.json';
 const DEFAULT_MFA_TIMEOUT_MS = 120_000;
 const DEFAULT_NAVIGATION_TIMEOUT_MS = 30_000;
+const BRAZE_ENV_IDS: Record<OmioEnv, string> = {
+  QA: '592d2af81b0e4d67991edb6b',
+  PROD: '577e3b2a56ec312e6058236f',
+};
 const OMIO_VOUCHER_BASE_URLS: Record<OmioEnv, string> = {
   QA: 'https://www.omio.com.qa.goeuro.ninja/vouchers',
   PROD: 'https://www.omio.com/vouchers',
 };
 
+loadEnvFileIntoProcessEnv();
+
+export function loadEnvFileIntoProcessEnv(
+  filePath = '.env',
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  let rawEnvFile: string;
+
+  try {
+    rawEnvFile = readFileSync(filePath, 'utf8');
+  } catch (error) {
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      return;
+    }
+
+    throw error;
+  }
+
+  for (const rawLine of rawEnvFile.split(/\r?\n/)) {
+    const line = rawLine.trim();
+
+    if (!line || line.startsWith('#')) {
+      continue;
+    }
+
+    const envLine = line.startsWith('export ') ? line.slice(7).trimStart() : line;
+    const equalsIndex = envLine.indexOf('=');
+
+    if (equalsIndex <= 0) {
+      continue;
+    }
+
+    const key = envLine.slice(0, equalsIndex).trim();
+
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || env[key] !== undefined) {
+      continue;
+    }
+
+    env[key] = parseEnvFileValue(envLine.slice(equalsIndex + 1));
+  }
+}
+
 export function loadBrazeLoginConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): BrazeLoginConfig {
+  const selectedEnv = loadEnvironment(env);
   const { username, password } = loadSharedCredentials(env);
-  const envId = requireEnv(env, 'BRAZE_ENV_ID');
+  const envId = buildBrazeEnvId(selectedEnv);
 
   return {
     targetUrl: buildBrazeAppUsageUrl(
@@ -72,7 +121,7 @@ export function loadMinCodesThreshold(env: NodeJS.ProcessEnv = process.env): num
 export function loadOmioVoucherApiConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): OmioVoucherApiConfig {
-  const omioEnv = parseOmioEnv(requireEnv(env, 'OMIO_ENV'));
+  const omioEnv = loadEnvironment(env);
   const { username, password } = loadSharedCredentials(env);
 
   return {
@@ -111,6 +160,14 @@ export function buildBrazeVouchersUrl(
 
 export function buildOmioVouchersBaseUrl(omioEnv: OmioEnv): string {
   return OMIO_VOUCHER_BASE_URLS[omioEnv];
+}
+
+export function buildBrazeEnvId(env: OmioEnv): string {
+  return BRAZE_ENV_IDS[env];
+}
+
+function loadEnvironment(env: NodeJS.ProcessEnv): OmioEnv {
+  return parseEnvironment(requireEnv(env, 'ENV'));
 }
 
 function loadSharedCredentials(env: NodeJS.ProcessEnv): {
@@ -187,12 +244,36 @@ function parsePositiveInteger(
   return parsed;
 }
 
-function parseOmioEnv(value: string): OmioEnv {
+function parseEnvironment(value: string): OmioEnv {
   const normalizedValue = value.toUpperCase();
 
   if (normalizedValue === 'QA' || normalizedValue === 'PROD') {
     return normalizedValue;
   }
 
-  throw new Error('OMIO_ENV must be QA or PROD');
+  throw new Error('ENV must be QA or PROD');
+}
+
+function parseEnvFileValue(value: string): string {
+  const trimmedValue = value.trim();
+
+  if (trimmedValue.startsWith('"') && trimmedValue.endsWith('"')) {
+    return trimmedValue
+      .slice(1, -1)
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\r')
+      .replace(/\\t/g, '\t')
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\');
+  }
+
+  if (trimmedValue.startsWith("'") && trimmedValue.endsWith("'")) {
+    return trimmedValue.slice(1, -1);
+  }
+
+  return trimmedValue.replace(/\s+#.*$/, '');
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error;
 }

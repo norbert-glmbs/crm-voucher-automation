@@ -1,3 +1,5 @@
+import { readFile, writeFile } from 'node:fs/promises';
+import { extname } from 'node:path';
 import type { Locator, Page } from '@playwright/test';
 
 export type ActiveVoucherRow = {
@@ -33,9 +35,20 @@ type PrintVoucherRowsBelowThresholdOptions = PrintActiveVoucherRowsOptions & {
   minCodesThreshold: number;
 };
 
+type UploadVoucherCsvOptions = PrintVoucherRowsBelowThresholdOptions & {
+  filePath: string;
+  targetDisplayName?: string;
+};
+
+export type UploadVoucherCsvResult = ActiveVoucherRow & {
+  filePath: string;
+  uploadedFilePath: string;
+};
+
 const DEFAULT_NAVIGATION_TIMEOUT_MS = 30_000;
 const DEFAULT_TABLE_TIMEOUT_MS = 30_000;
 const REQUIRED_HEADERS = ['display name', 'remaining', 'total', 'status'];
+const FILE_CHOOSER_TIMEOUT_MS = 1_000;
 
 export async function printActiveVoucherRowsFromBraze(
   page: Page,
@@ -68,6 +81,68 @@ export async function printActiveVoucherRowsBelowThresholdFromBraze(
   );
 
   return rowsBelowThreshold;
+}
+
+export async function uploadCsvToFirstActiveVoucherRowBelowThresholdFromBraze(
+  page: Page,
+  options: UploadVoucherCsvOptions,
+): Promise<UploadVoucherCsvResult> {
+  return uploadCsvToActiveVoucherRowBelowThresholdFromBraze(page, options);
+}
+
+export async function uploadCsvToActiveVoucherRowBelowThresholdFromBraze(
+  page: Page,
+  options: UploadVoucherCsvOptions,
+): Promise<UploadVoucherCsvResult> {
+  await goToBrazeVouchersPage(page, options.vouchersUrl, options.navigationTimeoutMs);
+
+  const activeRows = await readActiveVoucherRows(page, options.tableTimeoutMs);
+  const rowsBelowThreshold = filterActiveVoucherRowsBelowThreshold(
+    activeRows,
+    options.minCodesThreshold,
+  );
+
+  printActiveVoucherRowsBelowThreshold(
+    rowsBelowThreshold,
+    options.minCodesThreshold,
+    options.log,
+  );
+
+  const rowToUpdate = options.targetDisplayName
+    ? rowsBelowThreshold.find((row) => row.displayName === options.targetDisplayName)
+    : rowsBelowThreshold[0];
+
+  if (!rowToUpdate) {
+    if (options.targetDisplayName) {
+      throw new Error(
+        `ACTIVE Promotion Code "${options.targetDisplayName}" was not below MIN_CODES_THRESHOLD[${options.minCodesThreshold}] and cannot be selected for CSV upload.`,
+      );
+    }
+
+    throw new Error(
+      `No ACTIVE Promotion Codes below MIN_CODES_THRESHOLD[${options.minCodesThreshold}] were available for CSV upload.`,
+    );
+  }
+
+  options.log?.(`Opening Braze Promotion Code list ${rowToUpdate.displayName}`);
+  await openVoucherTableRowByDisplayName(
+    page,
+    rowToUpdate.displayName,
+    options.tableTimeoutMs ?? DEFAULT_TABLE_TIMEOUT_MS,
+  );
+
+  const uploadedFilePath = await prepareCsvForBrazeUpload(options.filePath);
+
+  options.log?.(`Uploading CSV ${uploadedFilePath}`);
+  await uploadCsvToOpenVoucherList(page, uploadedFilePath);
+
+  options.log?.(`Uploaded CSV to Braze Promotion Code list ${rowToUpdate.displayName}`);
+
+  return {
+    ...rowToUpdate,
+    filePath: options.filePath,
+    uploadedFilePath,
+  };
 }
 
 export async function goToBrazeVouchersPage(
@@ -205,6 +280,223 @@ async function readVoucherTableModel(
       ', ',
     )} was not visible within ${timeoutMs}ms. Found: ${foundHeaders}.`,
   );
+}
+
+async function openVoucherTableRowByDisplayName(
+  page: Page,
+  displayName: string,
+  timeoutMs: number,
+): Promise<void> {
+  const row = await findVoucherTableRowByDisplayName(page, displayName, timeoutMs);
+  const escapedDisplayName = escapeRegExp(displayName);
+  const preferredClickTargets = [
+    row.getByRole('link', { name: new RegExp(escapedDisplayName, 'i') }),
+    row.getByRole('button', { name: new RegExp(escapedDisplayName, 'i') }),
+  ];
+
+  for (const target of preferredClickTargets) {
+    if (await hasVisibleLocator(target)) {
+      await clickAndWaitForPossibleNavigation(page, target.first());
+      return;
+    }
+  }
+
+  await clickAndWaitForPossibleNavigation(page, row);
+}
+
+async function findVoucherTableRowByDisplayName(
+  page: Page,
+  displayName: string,
+  timeoutMs: number,
+): Promise<Locator> {
+  const deadline = Date.now() + timeoutMs;
+  const tableCandidates = page.locator('table, [role="table"], [role="grid"]');
+
+  while (Date.now() <= deadline) {
+    const candidateCount = await tableCandidates.count();
+
+    for (let index = 0; index < candidateCount; index += 1) {
+      const candidate = tableCandidates.nth(index);
+
+      if (!(await isVisible(candidate))) {
+        continue;
+      }
+
+      const table = await parseTable(candidate);
+      let headerIndexes: HeaderIndexes;
+
+      try {
+        headerIndexes = getHeaderIndexes(table.headers);
+      } catch {
+        continue;
+      }
+
+      const { rows, cellSelector } = await getVoucherTableRowLocators(candidate);
+
+      for (const row of rows) {
+        const cells = await normalizedTextContents(row.locator(cellSelector));
+        const parsedRow = readVoucherTableRow(cells, headerIndexes);
+
+        if (parsedRow?.displayName === displayName) {
+          return row;
+        }
+      }
+    }
+
+    await page.waitForTimeout(250);
+  }
+
+  throw new Error(`Braze voucher table row "${displayName}" was not visible.`);
+}
+
+async function getVoucherTableRowLocators(
+  table: Locator,
+): Promise<{
+  rows: Locator[];
+  cellSelector: string;
+}> {
+  if ((await table.locator('tr').count()) > 0) {
+    const bodyRows = await table.locator('tbody tr').all();
+
+    if (bodyRows.length > 0) {
+      return {
+        rows: bodyRows,
+        cellSelector: 'th, td',
+      };
+    }
+
+    return {
+      rows: (await table.locator('tr').all()).slice(1),
+      cellSelector: 'th, td',
+    };
+  }
+
+  return {
+    rows: await table.locator('[role="row"]').all(),
+    cellSelector: '[role="cell"], [role="gridcell"]',
+  };
+}
+
+async function uploadCsvToOpenVoucherList(page: Page, filePath: string): Promise<void> {
+  const uploadTrigger = await findVisibleLocator([
+    page.getByRole('button', { name: /upload csv/i }),
+    page.getByRole('link', { name: /upload csv/i }),
+    page.getByText(/upload csv/i),
+  ]);
+  const existingFileInput = page.locator('input[type="file"]').first();
+
+  if (uploadTrigger) {
+    const fileChooserPromise = page
+      .waitForEvent('filechooser', { timeout: FILE_CHOOSER_TIMEOUT_MS })
+      .catch(() => null);
+
+    await uploadTrigger.click();
+
+    const fileChooser = await fileChooserPromise;
+
+    if (fileChooser) {
+      await fileChooser.setFiles(filePath);
+    } else {
+      const fileInput = page.locator('input[type="file"]').first();
+      await fileInput.setInputFiles(filePath);
+    }
+  } else if (await hasAttachedLocator(existingFileInput)) {
+    await existingFileInput.setInputFiles(filePath);
+  } else {
+    throw new Error('Braze Upload CSV control was not visible.');
+  }
+
+  const startUploadButton = await waitForVisibleLocator(page, [
+    page.getByRole('button', { name: /start upload/i }),
+    page.getByText(/start upload/i),
+  ]);
+
+  if (!startUploadButton) {
+    throw new Error('Braze Start Upload button was not visible.');
+  }
+
+  await clickAndWaitForPossibleNavigation(page, startUploadButton);
+
+  const updateButton = await waitForVisibleLocator(page, [
+    page.getByRole('button', { name: /update list/i }),
+    page.getByText(/update list/i),
+  ]);
+
+  if (!updateButton) {
+    throw new Error('Braze Update list button was not visible.');
+  }
+
+  await clickAndWaitForPossibleNavigation(page, updateButton);
+}
+
+async function prepareCsvForBrazeUpload(filePath: string): Promise<string> {
+  const rawCsv = await readFile(filePath, 'utf8');
+  const csvWithoutHeader = removeVoucherCodeHeaderRow(rawCsv);
+  const uploadFilePath = buildBrazeUploadCsvPath(filePath);
+
+  await writeFile(uploadFilePath, csvWithoutHeader, 'utf8');
+
+  return uploadFilePath;
+}
+
+function removeVoucherCodeHeaderRow(value: string): string {
+  const lineEndingMatch = value.match(/\r\n|\n|\r/);
+
+  if (!lineEndingMatch || lineEndingMatch.index === undefined) {
+    return normalizeCsvHeaderCell(value) === 'voucher_code' ? '' : value;
+  }
+
+  const firstLineEndIndex = lineEndingMatch.index;
+  const firstLine = value.slice(0, firstLineEndIndex);
+
+  if (normalizeCsvHeaderCell(firstCsvCell(firstLine)) !== 'voucher_code') {
+    return value;
+  }
+
+  return value.slice(firstLineEndIndex + lineEndingMatch[0].length);
+}
+
+function firstCsvCell(line: string): string {
+  const trimmedLine = line.replace(/^\uFEFF/, '');
+
+  if (!trimmedLine.startsWith('"')) {
+    return trimmedLine.split(',')[0] ?? '';
+  }
+
+  let cell = '';
+
+  for (let index = 1; index < trimmedLine.length; index += 1) {
+    const char = trimmedLine[index];
+    const nextChar = trimmedLine[index + 1];
+
+    if (char === '"' && nextChar === '"') {
+      cell += '"';
+      index += 1;
+      continue;
+    }
+
+    if (char === '"') {
+      return cell;
+    }
+
+    cell += char;
+  }
+
+  return cell;
+}
+
+function normalizeCsvHeaderCell(value: string): string {
+  return value.replace(/^\uFEFF/, '').trim().toLowerCase();
+}
+
+function buildBrazeUploadCsvPath(filePath: string): string {
+  const extension = extname(filePath);
+
+  if (extension.toLowerCase() === '.csv') {
+    return `${filePath.slice(0, -extension.length)}.braze-upload${extension}`;
+  }
+
+  return `${filePath}.braze-upload.csv`;
 }
 
 async function parseTable(table: Locator): Promise<VoucherTableModel> {
@@ -363,4 +655,65 @@ async function isVisible(locator: Locator): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function hasVisibleLocator(locator: Locator): Promise<boolean> {
+  return (await locator.count()) > 0 && (await isVisible(locator.first()));
+}
+
+async function hasAttachedLocator(locator: Locator): Promise<boolean> {
+  try {
+    return (await locator.count()) > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function findVisibleLocator(locators: Locator[]): Promise<Locator | null> {
+  for (const locator of locators) {
+    if (await hasVisibleLocator(locator)) {
+      return locator.first();
+    }
+  }
+
+  return null;
+}
+
+async function waitForVisibleLocator(
+  page: Page,
+  locators: Locator[],
+  timeoutMs = DEFAULT_TABLE_TIMEOUT_MS,
+): Promise<Locator | null> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() <= deadline) {
+    const locator = await findVisibleLocator(locators);
+
+    if (locator) {
+      return locator;
+    }
+
+    await page.waitForTimeout(250);
+  }
+
+  return null;
+}
+
+async function clickAndWaitForPossibleNavigation(
+  page: Page,
+  locator: Locator,
+): Promise<void> {
+  await locator.click();
+
+  try {
+    await page.waitForLoadState('networkidle', {
+      timeout: 2_000,
+    });
+  } catch {
+    // Detail panels and modals often update without navigation; the next control wait is decisive.
+  }
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

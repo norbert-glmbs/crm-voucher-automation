@@ -1,3 +1,4 @@
+import { readFile, writeFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import {
   filterActiveVoucherRowsBelowThreshold,
@@ -6,6 +7,8 @@ import {
   printActiveVoucherRows,
   printActiveVoucherRowsBelowThreshold,
   readActiveVoucherRows,
+  uploadCsvToActiveVoucherRowBelowThresholdFromBraze,
+  uploadCsvToFirstActiveVoucherRowBelowThresholdFromBraze,
 } from '../../src/website/vouchers';
 
 test('reads active voucher rows from a native table', async ({ page }) => {
@@ -202,5 +205,236 @@ test('parses voucher counts with thousands separators', () => {
 test('fails clearly when a voucher count cannot be parsed', () => {
   expect(() => parseVoucherCount('not available', 'VIP Voucher remaining')).toThrow(
     'Unable to parse VIP Voucher remaining: not available',
+  );
+});
+
+test('uploads a CSV to the first active voucher row below threshold', async ({
+  page,
+}, testInfo) => {
+  const csvPath = testInfo.outputPath('vouchers.csv');
+  const output: string[] = [];
+  await writeFile(csvPath, 'voucher_code\nABC123\n', 'utf8');
+  await page.route('https://braze.example/vouchers', async (route) => {
+    await route.fulfill({
+      contentType: 'text/html',
+      body: `
+        <main>
+          <table>
+            <thead>
+              <tr>
+                <th>Display Name</th>
+                <th>Status</th>
+                <th>Remaining</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><button onclick="openVoucherList('Summer Reward')">Summer Reward</button></td>
+                <td>Active</td>
+                <td>45</td>
+                <td>100</td>
+              </tr>
+              <tr>
+                <td><button onclick="openVoucherList('VIP Voucher')">VIP Voucher</button></td>
+                <td>Active</td>
+                <td>2,000</td>
+                <td>5,000</td>
+              </tr>
+            </tbody>
+          </table>
+          <section id="details"></section>
+          <script>
+            function openVoucherList(name) {
+              document.getElementById('details').innerHTML =
+                '<h1 id="opened-name">' + name + '</h1>' +
+                '<button id="show-upload">Upload CSV</button>' +
+                '<div id="upload-controls" hidden>' +
+                  '<input id="voucher-file" type="file">' +
+                  '<button id="start-upload">Start Upload</button>' +
+                '</div>' +
+                '<button id="update-list" disabled>Update list</button>' +
+                '<div id="started-upload"></div>' +
+                '<div id="uploaded-file"></div>';
+              document.getElementById('show-upload').addEventListener('click', function () {
+                document.getElementById('upload-controls').hidden = false;
+              });
+              document.getElementById('start-upload').addEventListener('click', async function () {
+                const file = document.getElementById('voucher-file').files[0];
+                document.getElementById('started-upload').textContent = file ? file.name : 'missing';
+                document.getElementById('update-list').disabled = false;
+                window.uploadedCsvContent = file ? await file.text() : 'missing';
+              });
+              document.getElementById('update-list').addEventListener('click', function () {
+                document.getElementById('uploaded-file').textContent = window.uploadedCsvContent || 'missing';
+              });
+            }
+          </script>
+        </main>
+      `,
+    });
+  });
+
+  const result = await uploadCsvToFirstActiveVoucherRowBelowThresholdFromBraze(
+    page,
+    {
+      vouchersUrl: 'https://braze.example/vouchers',
+      minCodesThreshold: 50,
+      filePath: csvPath,
+      navigationTimeoutMs: 1_000,
+      tableTimeoutMs: 1_000,
+      log: (message) => output.push(message),
+    },
+  );
+
+  expect(result).toEqual({
+    displayName: 'Summer Reward',
+    remaining: '45',
+    total: '100',
+    filePath: csvPath,
+    uploadedFilePath: csvPath.replace('.csv', '.braze-upload.csv'),
+  });
+  await expect(page.locator('#opened-name')).toHaveText('Summer Reward');
+  await expect(page.locator('#started-upload')).toHaveText('vouchers.braze-upload.csv');
+  await expect(page.locator('#uploaded-file')).toHaveText('ABC123\n');
+  await expect(readFile(result.uploadedFilePath, 'utf8')).resolves.toBe('ABC123\n');
+  expect(output).toContain('Opening Braze Promotion Code list Summer Reward');
+  expect(output).toContain(`Uploading CSV ${result.uploadedFilePath}`);
+  expect(output).toContain('Uploaded CSV to Braze Promotion Code list Summer Reward');
+});
+
+test('uploads a CSV to the requested active voucher row below threshold', async ({
+  page,
+}, testInfo) => {
+  const csvPath = testInfo.outputPath('targeted-vouchers.csv');
+  await writeFile(csvPath, 'voucher_code\nTARGET123\n', 'utf8');
+  await page.route('https://braze.example/vouchers', async (route) => {
+    await route.fulfill({
+      contentType: 'text/html',
+      body: `
+        <main>
+          <table>
+            <thead>
+              <tr>
+                <th>Display Name</th>
+                <th>Status</th>
+                <th>Remaining</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><button onclick="openVoucherList('Summer Reward')">Summer Reward</button></td>
+                <td>Active</td>
+                <td>45</td>
+                <td>100</td>
+              </tr>
+              <tr>
+                <td><button onclick="openVoucherList('Welcome Credit')">Welcome Credit</button></td>
+                <td>Active</td>
+                <td>8</td>
+                <td>10</td>
+              </tr>
+            </tbody>
+          </table>
+          <section id="details"></section>
+          <script>
+            function openVoucherList(name) {
+              document.getElementById('details').innerHTML =
+                '<h1 id="opened-name">' + name + '</h1>' +
+                '<button id="show-upload">Upload CSV</button>' +
+                '<div id="upload-controls" hidden>' +
+                  '<input id="voucher-file" type="file">' +
+                  '<button id="start-upload">Start Upload</button>' +
+                '</div>' +
+                '<button id="update-list" disabled>Update list</button>' +
+                '<div id="uploaded-file"></div>';
+              document.getElementById('show-upload').addEventListener('click', function () {
+                document.getElementById('upload-controls').hidden = false;
+              });
+              document.getElementById('start-upload').addEventListener('click', async function () {
+                const file = document.getElementById('voucher-file').files[0];
+                document.getElementById('update-list').disabled = false;
+                window.uploadedCsvContent = file ? await file.text() : 'missing';
+              });
+              document.getElementById('update-list').addEventListener('click', function () {
+                document.getElementById('uploaded-file').textContent = window.uploadedCsvContent || 'missing';
+              });
+            }
+          </script>
+        </main>
+      `,
+    });
+  });
+
+  const result = await uploadCsvToActiveVoucherRowBelowThresholdFromBraze(
+    page,
+    {
+      vouchersUrl: 'https://braze.example/vouchers',
+      minCodesThreshold: 50,
+      filePath: csvPath,
+      targetDisplayName: 'Welcome Credit',
+      navigationTimeoutMs: 1_000,
+      tableTimeoutMs: 1_000,
+    },
+  );
+
+  expect(result).toEqual({
+    displayName: 'Welcome Credit',
+    remaining: '8',
+    total: '10',
+    filePath: csvPath,
+    uploadedFilePath: csvPath.replace('.csv', '.braze-upload.csv'),
+  });
+  await expect(page.locator('#opened-name')).toHaveText('Welcome Credit');
+  await expect(page.locator('#uploaded-file')).toHaveText('TARGET123\n');
+  await expect(readFile(result.uploadedFilePath, 'utf8')).resolves.toBe(
+    'TARGET123\n',
+  );
+});
+
+test('fails clearly when no active voucher rows below threshold are available for upload', async ({
+  page,
+}, testInfo) => {
+  const csvPath = testInfo.outputPath('vouchers.csv');
+  await writeFile(csvPath, 'voucher_id\nABC123\n', 'utf8');
+  await page.route('https://braze.example/vouchers', async (route) => {
+    await route.fulfill({
+      contentType: 'text/html',
+      body: `
+        <main>
+          <table>
+            <thead>
+              <tr>
+                <th>Display Name</th>
+                <th>Status</th>
+                <th>Remaining</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>VIP Voucher</td>
+                <td>Active</td>
+                <td>2,000</td>
+                <td>5,000</td>
+              </tr>
+            </tbody>
+          </table>
+        </main>
+      `,
+    });
+  });
+
+  await expect(
+    uploadCsvToFirstActiveVoucherRowBelowThresholdFromBraze(page, {
+      vouchersUrl: 'https://braze.example/vouchers',
+      minCodesThreshold: 50,
+      filePath: csvPath,
+      navigationTimeoutMs: 1_000,
+      tableTimeoutMs: 1_000,
+    }),
+  ).rejects.toThrow(
+    'No ACTIVE Promotion Codes below MIN_CODES_THRESHOLD[50] were available for CSV upload.',
   );
 });

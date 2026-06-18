@@ -1,5 +1,5 @@
 {
-  "batchSize": 50,
+  "batchSize": 10,
   "uppercaseIds": false,
   "template": {
     "campaignName": "norbert_test_2",

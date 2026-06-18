@@ -1,6 +1,6 @@
 # Playwright Website Automation Status
 
-Last updated: 2026-06-17
+Last updated: 2026-06-18
 
 ## Completed
 
@@ -15,8 +15,8 @@ Last updated: 2026-06-17
 - [x] Added manual real-site login commands through `yarn braze:login` and `yarn braze:login:headed`.
 - [x] Updated Playwright config to retain traces, screenshots, and videos on failure for debugging login runs.
 - [x] Verified the mocked login test with `yarn test`.
-- [x] Added `BRAZE_ENV_ID` configuration so login targets `https://dashboard-01.braze.com/dashboard/app_usage/{envId}?locale=en`.
-- [x] Added config tests for environment-specific Braze app usage URL generation and required `BRAZE_ENV_ID` validation.
+- [x] Added `ENV` configuration so login targets the mapped Braze environment for QA or PROD.
+- [x] Added config tests for environment-specific Braze app usage URL generation and required `ENV` validation.
 - [x] Verified the environment-specific login/config tests with `yarn test`.
 - [x] Updated the manual Braze login command to reuse an existing saved auth state file before falling back to username/password login.
 - [x] Verified the auth-state reuse code compiles cleanly through `yarn test`.
@@ -24,7 +24,7 @@ Last updated: 2026-06-17
 - [x] Implemented active voucher table scanning that reads `Display Name`, `Remaining`, `Total`, and `Status` columns.
 - [x] Added console output for active voucher rows as `display name, remaining, total`.
 - [x] Added `MIN_CODES_THRESHOLD` configuration and filtering for active promotion-code lists whose remaining value is below the threshold.
-- [x] Added `OMIO_ENV` configuration for selecting the Omio voucher API base URL for QA or PROD.
+- [x] Added `ENV` configuration for selecting the Omio voucher API base URL for QA or PROD.
 - [x] Added shared `LOGIN_USERNAME` and `PASSWORD` configuration for Braze login and Omio client-credentials authentication.
 - [x] Added Omio access-token request support for `POST /oauth/token?grant_type=client_credentials`.
 - [x] Added `yarn omio:auth` manual command that prints the returned `access_token`.
@@ -38,9 +38,9 @@ Last updated: 2026-06-17
 
 ## Not Completed Yet
 
-- [ ] Verify the real Braze login flow with valid credentials and a real `BRAZE_ENV_ID`.
+- [ ] Verify the real Braze login flow with valid credentials and `ENV=QA` or `ENV=PROD`.
 - [ ] Confirm whether the real account requires MFA/CAPTCHA on every run.
-- [ ] Verify the real Braze vouchers page table selectors with valid credentials and a real `BRAZE_ENV_ID`.
+- [ ] Verify the real Braze vouchers page table selectors with valid credentials and `ENV=QA` or `ENV=PROD`.
 - [ ] Implement threshold rules.
 - [ ] Implement external API file download.
 - [ ] Implement file upload through the website UI.

@@ -46,7 +46,7 @@ export async function loginToBraze(
 
   await fillUsernamePasswordLoginForm(page, options);
 
-  const authenticated = await waitForAuthenticatedDashboard(
+  const authenticated = await waitForAuthenticatedDestination(
     page,
     options.targetUrl,
     navigationTimeoutMs,
@@ -59,7 +59,7 @@ export async function loginToBraze(
       );
     }
 
-    const completedManually = await waitForAuthenticatedDashboard(
+    const completedManually = await waitForAuthenticatedDestination(
       page,
       options.targetUrl,
       mfaTimeoutMs,
@@ -85,7 +85,7 @@ export async function loginToBraze(
 
     if (!reachedTarget) {
       throw new Error(
-        `Braze login succeeded, but the app usage page was not reached. Current URL: ${page.url()} vs Expected URL : ${options.targetUrl}`,
+        `Braze login succeeded, but the target page was not reached. Current URL: ${page.url()} vs Expected URL : ${options.targetUrl}`,
       );
     }
   }
@@ -176,18 +176,18 @@ function passwordLocators(page: Page): Locator[] {
   ];
 }
 
-async function waitForAuthenticatedDashboard(
+async function waitForAuthenticatedDestination(
   page: Page,
   targetUrl: string,
   timeoutMs: number,
 ): Promise<boolean> {
-  if (isAuthenticatedDashboardUrl(page.url(), targetUrl)) {
+  if (isAuthenticatedDestinationUrl(page.url(), targetUrl)) {
     return true;
   }
 
   try {
     await page.waitForURL(
-      (url) => isAuthenticatedDashboardUrl(url.toString(), targetUrl),
+      (url) => isAuthenticatedDestinationUrl(url.toString(), targetUrl),
       {
         timeout: timeoutMs,
         waitUntil: 'domcontentloaded',
@@ -219,13 +219,14 @@ async function waitForTargetDestination(
   }
 }
 
-function isAuthenticatedDashboardUrl(currentUrl: string, targetUrl: string): boolean {
+function isAuthenticatedDestinationUrl(currentUrl: string, targetUrl: string): boolean {
   const current = new URL(currentUrl);
   const target = new URL(targetUrl);
 
   return (
     current.origin === target.origin &&
-    current.pathname.startsWith('/dashboard') &&
+    (current.pathname.startsWith('/dashboard') ||
+      isAtTargetDestination(currentUrl, targetUrl)) &&
     !isAuthenticationPath(current.pathname)
   );
 }
