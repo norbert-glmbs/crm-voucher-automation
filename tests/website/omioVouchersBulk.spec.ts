@@ -233,9 +233,6 @@ test('fails clearly when a custom voucher id is used with a bulk batch', async (
 
 test('reads vouchers bulk job id from creation response', () => {
   expect(readOmioVouchersBulkJobId({ jobId: 'job-id-123' })).toBe('job-id-123');
-  expect(readOmioVouchersBulkJobId({ id: 'legacy-id-123' })).toBe(
-    'legacy-id-123',
-  );
 });
 
 test('fails clearly when creation response has no job id', () => {

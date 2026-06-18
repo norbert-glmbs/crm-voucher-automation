@@ -279,14 +279,8 @@ export async function downloadOmioVouchersBulkJobVouchers(
 }
 
 export function readOmioVouchersBulkJobId(body: unknown): string {
-  if (isRecord(body)) {
-    if (typeof body.jobId === 'string' && body.jobId) {
-      return body.jobId;
-    }
-
-    if (typeof body.id === 'string' && body.id) {
-      return body.id;
-    }
+  if (isRecord(body) && typeof body.jobId === 'string' && body.jobId) {
+    return body.jobId;
   }
 
   throw new Error('Omio vouchers bulk job response did not include jobId');

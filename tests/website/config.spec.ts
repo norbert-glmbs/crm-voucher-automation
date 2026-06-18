@@ -135,32 +135,6 @@ test('requires a shared password for Braze login config', () => {
   ).toThrow('Missing required environment variable: PASSWORD');
 });
 
-test('accepts USERNAME as a fallback when it is explicitly supplied', () => {
-  const config = loadBrazeLoginConfig({
-    ENV: 'QA',
-    USERNAME: 'operator@example.com',
-    USER: 'local-user',
-    LOGNAME: 'local-user',
-    PASSWORD: 'secret',
-  });
-
-  expect(config.username).toBe('operator@example.com');
-});
-
-test('rejects USERNAME when it resolves to the local shell user', () => {
-  expect(() =>
-    loadBrazeLoginConfig({
-      ENV: 'QA',
-      USERNAME: 'local-user',
-      USER: 'local-user',
-      LOGNAME: 'local-user',
-      PASSWORD: 'secret',
-    }),
-  ).toThrow(
-    'USERNAME resolved to the local shell user. Set LOGIN_USERNAME for the shared Braze/Omio login username.',
-  );
-});
-
 test('loads the minimum codes threshold', () => {
   expect(loadMinCodesThreshold({ MIN_CODES_THRESHOLD: '50' })).toBe(50);
 });
@@ -178,7 +152,9 @@ test('requires the minimum codes threshold to be a positive integer', () => {
 });
 
 test('builds the Omio QA vouchers base URL', () => {
-  expect(buildOmioVouchersBaseUrl('QA')).toBe('http://localhost:8080/vouchers');
+  expect(buildOmioVouchersBaseUrl('QA')).toBe(
+    'https://www.omio.com.qa.goeuro.ninja/vouchers',
+  );
 });
 
 test('builds the Omio production vouchers base URL', () => {
@@ -194,7 +170,7 @@ test('loads Omio voucher API config for QA', () => {
     }),
   ).toEqual({
     omioEnv: 'QA',
-    baseUrl: 'http://localhost:8080/vouchers',
+    baseUrl: 'https://www.omio.com.qa.goeuro.ninja/vouchers',
     username: 'client-id',
     password: 'client-secret',
   });
@@ -224,7 +200,7 @@ test('normalizes environment casing', () => {
     }),
   ).toEqual({
     omioEnv: 'QA',
-    baseUrl: 'http://localhost:8080/vouchers',
+    baseUrl: 'https://www.omio.com.qa.goeuro.ninja/vouchers',
     username: 'client-id',
     password: 'client-secret',
   });

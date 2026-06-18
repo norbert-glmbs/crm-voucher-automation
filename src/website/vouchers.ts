@@ -50,18 +50,6 @@ const DEFAULT_TABLE_TIMEOUT_MS = 30_000;
 const REQUIRED_HEADERS = ['display name', 'remaining', 'total', 'status'];
 const FILE_CHOOSER_TIMEOUT_MS = 1_000;
 
-export async function printActiveVoucherRowsFromBraze(
-  page: Page,
-  options: PrintActiveVoucherRowsOptions,
-): Promise<ActiveVoucherRow[]> {
-  await goToBrazeVouchersPage(page, options.vouchersUrl, options.navigationTimeoutMs);
-
-  const activeRows = await readActiveVoucherRows(page, options.tableTimeoutMs);
-  printActiveVoucherRows(activeRows, options.log);
-
-  return activeRows;
-}
-
 export async function printActiveVoucherRowsBelowThresholdFromBraze(
   page: Page,
   options: PrintVoucherRowsBelowThresholdOptions,
@@ -81,13 +69,6 @@ export async function printActiveVoucherRowsBelowThresholdFromBraze(
   );
 
   return rowsBelowThreshold;
-}
-
-export async function uploadCsvToFirstActiveVoucherRowBelowThresholdFromBraze(
-  page: Page,
-  options: UploadVoucherCsvOptions,
-): Promise<UploadVoucherCsvResult> {
-  return uploadCsvToActiveVoucherRowBelowThresholdFromBraze(page, options);
 }
 
 export async function uploadCsvToActiveVoucherRowBelowThresholdFromBraze(
@@ -180,17 +161,6 @@ export async function readActiveVoucherRows(
       remaining,
       total,
     }));
-}
-
-export function printActiveVoucherRows(
-  rows: ActiveVoucherRow[],
-  log: (message: string) => void = console.log,
-): void {
-  log('All ACTIVE Promotion Codes');
-
-  for (const row of rows) {
-    log(formatActiveVoucherRow(row));
-  }
 }
 
 export function filterActiveVoucherRowsBelowThreshold(

@@ -185,18 +185,6 @@ function loadSharedUsername(env: NodeJS.ProcessEnv): string {
     return env.LOGIN_USERNAME;
   }
 
-  const username = env.USERNAME;
-
-  if (username && username !== env.USER && username !== env.LOGNAME) {
-    return username;
-  }
-
-  if (username) {
-    throw new Error(
-      'USERNAME resolved to the local shell user. Set LOGIN_USERNAME for the shared Braze/Omio login username.',
-    );
-  }
-
   throw new Error('Missing required environment variable: LOGIN_USERNAME');
 }
 

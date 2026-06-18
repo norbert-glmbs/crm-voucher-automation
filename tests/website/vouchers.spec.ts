@@ -4,11 +4,9 @@ import {
   filterActiveVoucherRowsBelowThreshold,
   formatActiveVoucherRow,
   parseVoucherCount,
-  printActiveVoucherRows,
   printActiveVoucherRowsBelowThreshold,
   readActiveVoucherRows,
   uploadCsvToActiveVoucherRowBelowThresholdFromBraze,
-  uploadCsvToFirstActiveVoucherRowBelowThresholdFromBraze,
 } from '../../src/website/vouchers';
 
 test('reads active voucher rows from a native table', async ({ page }) => {
@@ -93,32 +91,6 @@ test('reads active voucher rows from an ARIA grid', async ({ page }) => {
       remaining: '2,000',
       total: '5,000',
     },
-  ]);
-});
-
-test('prints active voucher rows', () => {
-  const output: string[] = [];
-
-  printActiveVoucherRows(
-    [
-      {
-        displayName: 'Summer Reward',
-        remaining: '45',
-        total: '100',
-      },
-      {
-        displayName: 'VIP Voucher',
-        remaining: '2,000',
-        total: '5,000',
-      },
-    ],
-    (message) => output.push(message),
-  );
-
-  expect(output).toEqual([
-    'All ACTIVE Promotion Codes',
-    'Display Name[Summer Reward] | Remaining Vouchers[45] | Total Vouchers[100]',
-    'Display Name[VIP Voucher] | Remaining Vouchers[2,000] | Total Vouchers[5,000]',
   ]);
 });
 
@@ -275,7 +247,7 @@ test('uploads a CSV to the first active voucher row below threshold', async ({
     });
   });
 
-  const result = await uploadCsvToFirstActiveVoucherRowBelowThresholdFromBraze(
+  const result = await uploadCsvToActiveVoucherRowBelowThresholdFromBraze(
     page,
     {
       vouchersUrl: 'https://braze.example/vouchers',
@@ -427,7 +399,7 @@ test('fails clearly when no active voucher rows below threshold are available fo
   });
 
   await expect(
-    uploadCsvToFirstActiveVoucherRowBelowThresholdFromBraze(page, {
+    uploadCsvToActiveVoucherRowBelowThresholdFromBraze(page, {
       vouchersUrl: 'https://braze.example/vouchers',
       minCodesThreshold: 50,
       filePath: csvPath,
