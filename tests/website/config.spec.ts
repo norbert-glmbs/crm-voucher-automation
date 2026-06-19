@@ -9,6 +9,7 @@ import {
   loadEnvFileIntoProcessEnv,
   loadMinCodesThreshold,
   loadOmioVoucherApiConfig,
+  loadReplenishBatchSize,
 } from '../../src/config';
 
 test('builds the Braze app usage URL from the selected environment id', () => {
@@ -151,10 +152,24 @@ test('requires the minimum codes threshold to be a positive integer', () => {
   );
 });
 
-test('builds the Omio QA vouchers base URL', () => {
-  expect(buildOmioVouchersBaseUrl('QA')).toBe(
-    'https://www.omio.com.qa.goeuro.ninja/vouchers',
+test('loads the replenish batch size', () => {
+  expect(loadReplenishBatchSize({ REPLENISH_BATCH_SIZE: '25' })).toBe(25);
+});
+
+test('requires the replenish batch size', () => {
+  expect(() => loadReplenishBatchSize({})).toThrow(
+    'Missing required environment variable: REPLENISH_BATCH_SIZE',
   );
+});
+
+test('requires the replenish batch size to be a positive integer', () => {
+  expect(() => loadReplenishBatchSize({ REPLENISH_BATCH_SIZE: '0' })).toThrow(
+    'REPLENISH_BATCH_SIZE must be a positive integer',
+  );
+});
+
+test('builds the Omio QA vouchers base URL', () => {
+  expect(buildOmioVouchersBaseUrl('QA')).toBe('http://localhost:8080/vouchers');
 });
 
 test('builds the Omio production vouchers base URL', () => {
@@ -170,7 +185,7 @@ test('loads Omio voucher API config for QA', () => {
     }),
   ).toEqual({
     omioEnv: 'QA',
-    baseUrl: 'https://www.omio.com.qa.goeuro.ninja/vouchers',
+    baseUrl: 'http://localhost:8080/vouchers',
     username: 'client-id',
     password: 'client-secret',
   });
@@ -200,7 +215,7 @@ test('normalizes environment casing', () => {
     }),
   ).toEqual({
     omioEnv: 'QA',
-    baseUrl: 'https://www.omio.com.qa.goeuro.ninja/vouchers',
+    baseUrl: 'http://localhost:8080/vouchers',
     username: 'client-id',
     password: 'client-secret',
   });

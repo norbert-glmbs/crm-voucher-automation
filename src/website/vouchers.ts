@@ -49,6 +49,8 @@ const DEFAULT_NAVIGATION_TIMEOUT_MS = 30_000;
 const DEFAULT_TABLE_TIMEOUT_MS = 30_000;
 const REQUIRED_HEADERS = ['display name', 'remaining', 'total', 'status'];
 const FILE_CHOOSER_TIMEOUT_MS = 1_000;
+const OMIO_VOUCHERS_BULK_JOB_ID_PATTERN =
+  /(?:^|_)jobId_([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:_|$)/;
 
 export async function printActiveVoucherRowsBelowThresholdFromBraze(
   page: Page,
@@ -207,6 +209,20 @@ export function parseVoucherCount(value: string, fieldName = 'voucher count'): n
   }
 
   return Number(normalizedValue);
+}
+
+export function extractOmioVouchersBulkJobIdFromDisplayName(
+  displayName: string,
+): string {
+  const match = displayName.match(OMIO_VOUCHERS_BULK_JOB_ID_PATTERN);
+
+  if (!match) {
+    throw new Error(
+      `Unable to extract Omio vouchers bulk jobId from Braze Promotion Code display name: ${displayName}`,
+    );
+  }
+
+  return match[1];
 }
 
 async function readVoucherTableModel(

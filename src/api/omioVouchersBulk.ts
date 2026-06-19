@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 export type OmioVouchersBulkJobBody = {
@@ -80,29 +80,6 @@ type FetchLike = (
   init: FetchRequestInit,
 ) => Promise<FetchResponseLike>;
 
-type VoucherType = 'RELATIVE' | 'FIXED';
-
-export const DEFAULT_VOUCHERS_BULK_JOB_BODY_PATH =
-  'config/vouchers-bulk-job.json';
-
-const MAX_BATCH_SIZE = 100_000;
-const ISO_DATE_TIME_PATTERN =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
-const MONEY_TEMPLATE_FIELDS = [
-  'flatReduction',
-  'minPrice',
-  'maxPrice',
-  'minPayment',
-  'maxReduction',
-];
-const OPTIONAL_TEMPLATE_ARRAY_FIELDS = [
-  'includedCountries',
-  'excludedCountries',
-  'providers',
-  'carriers',
-  'allowedBookingDomains',
-  'allowedRedemptionPlatforms',
-];
 const APPROVE_VOUCHERS_BULK_JOB_BODY = {
   approvalStatus: 'APPROVED',
 };
@@ -111,15 +88,6 @@ const COMPLETED_JOB_STATUS = 'COMPLETED';
 const DEFAULT_COMPLETION_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_DOWNLOAD_MAX_ATTEMPTS = 3;
 const DEFAULT_DOWNLOAD_RETRY_DELAY_MS = 5_000;
-
-export async function loadVouchersBulkJobBody(
-  filePath = DEFAULT_VOUCHERS_BULK_JOB_BODY_PATH,
-): Promise<OmioVouchersBulkJobBody> {
-  const rawBody = await readFile(filePath, 'utf8');
-  const parsedBody = JSON.parse(rawBody) as unknown;
-
-  return validateVouchersBulkJobBody(parsedBody, filePath);
-}
 
 export async function createOmioVouchersBulkJob(
   config: OmioVouchersBulkJobConfig,
@@ -286,6 +254,37 @@ export function readOmioVouchersBulkJobId(body: unknown): string {
   throw new Error('Omio vouchers bulk job response did not include jobId');
 }
 
+export function buildOmioVouchersBulkJobBodyFromExistingJob(
+  sourceJob: unknown,
+  batchSize: number,
+): OmioVouchersBulkJobBody {
+  if (!Number.isInteger(batchSize) || batchSize <= 0) {
+    throw new Error('REPLENISH_BATCH_SIZE must be a positive integer');
+  }
+
+  if (!isRecord(sourceJob)) {
+    throw new Error('Omio vouchers bulk source job response must be an object');
+  }
+
+  if (typeof sourceJob.uppercaseIds !== 'boolean') {
+    throw new Error(
+      'Omio vouchers bulk source job response did not include boolean uppercaseIds',
+    );
+  }
+
+  if (!isRecord(sourceJob.template)) {
+    throw new Error(
+      'Omio vouchers bulk source job response did not include template',
+    );
+  }
+
+  return {
+    batchSize,
+    uppercaseIds: sourceJob.uppercaseIds,
+    template: cloneJsonRecord(sourceJob.template),
+  };
+}
+
 export function buildOmioVouchersBulkJobVouchersUrl(
   baseUrl: string,
   jobId: string,
@@ -368,243 +367,6 @@ function readOmioVouchersBulkJobStatus(body: unknown, context: string): string {
   throw new Error(`${context} did not include status`);
 }
 
-function validateVouchersBulkJobBody(
-  value: unknown,
-  filePath: string,
-): OmioVouchersBulkJobBody {
-  if (!isRecord(value)) {
-    throw new Error(`${filePath} must contain a JSON object.`);
-  }
-
-  const batchSize = value.batchSize;
-
-  if (
-    !Number.isInteger(batchSize) ||
-    (batchSize as number) < 1 ||
-    (batchSize as number) > MAX_BATCH_SIZE
-  ) {
-    throw new Error(
-      `${filePath} batchSize must be an integer from 1 to ${MAX_BATCH_SIZE}.`,
-    );
-  }
-
-  if (typeof value.uppercaseIds !== 'boolean') {
-    throw new Error(`${filePath} must define boolean uppercaseIds.`);
-  }
-
-  if (!isRecord(value.template)) {
-    throw new Error(`${filePath} must define template as an object.`);
-  }
-
-  validateOptionalNonEmptyString(value, 'publisherName', filePath);
-  validateOptionalNonEmptyString(value, 'ruleName', filePath);
-  validateOptionalRecord(value, 'publisherEmailDetails', filePath);
-  validateVoucherTemplate(value.template, batchSize as number, filePath);
-
-  return value as OmioVouchersBulkJobBody;
-}
-
-function validateVoucherTemplate(
-  template: Record<string, unknown>,
-  batchSize: number,
-  filePath: string,
-): void {
-  requireNonEmptyString(template, 'campaignName', `${filePath} template`);
-  requireIsoDateTimeString(template, 'expiresAt', `${filePath} template`);
-  requireCurrencyCode(template, 'currency', `${filePath} template`);
-  validateVoucherId(template, batchSize, filePath);
-
-  for (const fieldName of MONEY_TEMPLATE_FIELDS) {
-    validateOptionalPositiveInteger(template, fieldName, `${filePath} template`);
-  }
-
-  for (const fieldName of OPTIONAL_TEMPLATE_ARRAY_FIELDS) {
-    validateOptionalNonEmptyStringArray(
-      template,
-      fieldName,
-      `${filePath} template`,
-    );
-  }
-
-  const type = requireVoucherType(template, filePath);
-
-  if (type === 'RELATIVE') {
-    requirePositiveInteger(
-      template,
-      'percentageReduction',
-      `${filePath} template`,
-    );
-    requirePositiveInteger(template, 'maxPrice', `${filePath} template`);
-    return;
-  }
-
-  const flatReduction = requirePositiveInteger(
-    template,
-    'flatReduction',
-    `${filePath} template`,
-  );
-  const minPrice = requirePositiveInteger(
-    template,
-    'minPrice',
-    `${filePath} template`,
-  );
-
-  if (flatReduction > minPrice) {
-    throw new Error(
-      `${filePath} template.flatReduction must be less than or equal to template.minPrice.`,
-    );
-  }
-}
-
-function validateVoucherId(
-  template: Record<string, unknown>,
-  batchSize: number,
-  filePath: string,
-): void {
-  if (!hasField(template, 'voucherId')) {
-    return;
-  }
-
-  requireNonEmptyString(template, 'voucherId', `${filePath} template`);
-
-  if (batchSize !== 1) {
-    throw new Error(
-      `${filePath} template.voucherId can only be set when batchSize is 1.`,
-    );
-  }
-}
-
-function requireVoucherType(
-  template: Record<string, unknown>,
-  filePath: string,
-): VoucherType {
-  const value = template.type;
-
-  if (value !== 'RELATIVE' && value !== 'FIXED') {
-    throw new Error(`${filePath} template.type must be RELATIVE or FIXED.`);
-  }
-
-  return value;
-}
-
-function requireNonEmptyString(
-  record: Record<string, unknown>,
-  fieldName: string,
-  context: string,
-): string {
-  const value = record[fieldName];
-
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw new Error(`${context}.${fieldName} must be a non-empty string.`);
-  }
-
-  return value;
-}
-
-function validateOptionalNonEmptyString(
-  record: Record<string, unknown>,
-  fieldName: string,
-  context: string,
-): void {
-  if (!hasField(record, fieldName)) {
-    return;
-  }
-
-  requireNonEmptyString(record, fieldName, context);
-}
-
-function validateOptionalRecord(
-  record: Record<string, unknown>,
-  fieldName: string,
-  context: string,
-): void {
-  if (!hasField(record, fieldName)) {
-    return;
-  }
-
-  if (!isRecord(record[fieldName])) {
-    throw new Error(`${context}.${fieldName} must be an object.`);
-  }
-}
-
-function requireIsoDateTimeString(
-  record: Record<string, unknown>,
-  fieldName: string,
-  context: string,
-): void {
-  const value = requireNonEmptyString(record, fieldName, context);
-
-  if (
-    !ISO_DATE_TIME_PATTERN.test(value) ||
-    Number.isNaN(Date.parse(value))
-  ) {
-    throw new Error(`${context}.${fieldName} must be an ISO date-time string.`);
-  }
-}
-
-function requireCurrencyCode(
-  record: Record<string, unknown>,
-  fieldName: string,
-  context: string,
-): void {
-  const value = requireNonEmptyString(record, fieldName, context);
-
-  if (!/^[A-Z]{3}$/.test(value)) {
-    throw new Error(`${context}.${fieldName} must be an ISO currency code.`);
-  }
-}
-
-function requirePositiveInteger(
-  record: Record<string, unknown>,
-  fieldName: string,
-  context: string,
-): number {
-  const value = record[fieldName];
-
-  if (!Number.isInteger(value) || (value as number) <= 0) {
-    throw new Error(`${context}.${fieldName} must be a positive integer.`);
-  }
-
-  return value as number;
-}
-
-function validateOptionalPositiveInteger(
-  record: Record<string, unknown>,
-  fieldName: string,
-  context: string,
-): void {
-  if (!hasField(record, fieldName)) {
-    return;
-  }
-
-  requirePositiveInteger(record, fieldName, context);
-}
-
-function validateOptionalNonEmptyStringArray(
-  record: Record<string, unknown>,
-  fieldName: string,
-  context: string,
-): void {
-  if (!hasField(record, fieldName)) {
-    return;
-  }
-
-  const value = record[fieldName];
-
-  if (
-    !Array.isArray(value) ||
-    value.some((entry) => typeof entry !== 'string' || entry.trim() === '')
-  ) {
-    throw new Error(`${context}.${fieldName} must be an array of strings.`);
-  }
-
-  if (value.length === 0) {
-    throw new Error(
-      `${context}.${fieldName} must not be empty; omit it when unused.`,
-    );
-  }
-}
-
 function parseResponseBody(responseText: string): unknown {
   if (!responseText) {
     return null;
@@ -625,8 +387,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function hasField(record: Record<string, unknown>, fieldName: string): boolean {
-  return Object.prototype.hasOwnProperty.call(record, fieldName);
+function cloneJsonRecord(value: Record<string, unknown>): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
 }
 
 function toError(error: unknown): Error {

@@ -1,12 +1,12 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { requestOmioAccessToken, type OmioAccessToken } from '../../src/api/omioAuth';
 import {
-  DEFAULT_VOUCHERS_BULK_JOB_BODY_PATH,
   type OmioVouchersBulkJobBody,
   approveOmioVouchersBulkJob,
+  buildOmioVouchersBulkJobBodyFromExistingJob,
   createOmioVouchersBulkJob,
   downloadOmioVouchersBulkJobVouchers,
-  loadVouchersBulkJobBody,
+  getOmioVouchersBulkJob,
   readOmioVouchersBulkJobId,
   waitForOmioVouchersBulkJobCompletion,
 } from '../../src/api/omioVouchersBulk';
@@ -14,11 +14,13 @@ import {
   loadBrazeLoginConfig,
   loadMinCodesThreshold,
   loadOmioVoucherApiConfig,
+  loadReplenishBatchSize,
   type BrazeLoginConfig,
   type OmioVoucherApiConfig,
 } from '../../src/config';
 import { isAtTargetDestination, loginToBraze } from '../../src/website/auth';
 import {
+  extractOmioVouchersBulkJobIdFromDisplayName,
   printActiveVoucherRowsBelowThresholdFromBraze,
   type ActiveVoucherRow,
   uploadCsvToActiveVoucherRowBelowThresholdFromBraze,
@@ -29,13 +31,10 @@ import {
   shouldRunManualSpec,
 } from './support/manualFlow';
 
-const EXISTING_OMIO_VOUCHERS_BULK_JOB_ID_ENV =
-  'OMIO_VOUCHERS_BULK_JOB_ID';
-
 test.skip(
-  !shouldRunManualSpec('RUN_OMIO_VOUCHERS_BULK'),
+  !shouldRunManualSpec('RUN_OMIO_VOUCHERS_BULK_REPLENISH'),
   manualSkipMessage(
-    'RUN_OMIO_VOUCHERS_BULK',
+    'RUN_OMIO_VOUCHERS_BULK_REPLENISH',
     'scan Braze for low Promotion Code lists and replenish them with Omio vouchers bulk jobs',
   ),
 );
@@ -47,6 +46,7 @@ test(
 
     const brazeConfig = loadBrazeLoginConfig();
     const minCodesThreshold = loadMinCodesThreshold();
+    const batchSize = loadReplenishBatchSize();
     const existingAuthStatePath = await getReadableFilePath(
       brazeConfig.authStatePath,
     );
@@ -88,46 +88,20 @@ test(
 
       const omioConfig = loadOmioVoucherApiConfig();
       const token = await requestOmioAccessToken(omioConfig);
-      const existingJobId =
-        process.env[EXISTING_OMIO_VOUCHERS_BULK_JOB_ID_ENV]?.trim();
-
-      if (existingJobId) {
-        const targetRow = rowsBelowThreshold[0];
-
-        if (rowsBelowThreshold.length > 1) {
-          console.log(
-            `${EXISTING_OMIO_VOUCHERS_BULK_JOB_ID_ENV} provides one existing Omio job; it will be uploaded only to ${targetRow.displayName}.`,
-          );
-        }
-
-        console.log(
-          `${EXISTING_OMIO_VOUCHERS_BULK_JOB_ID_ENV} is set; downloading vouchers for existing Omio vouchers bulk job ${existingJobId}.`,
-        );
-        const csvPath = await downloadVouchersForJob({
-          baseUrl: omioConfig.baseUrl,
-          accessToken: token.accessToken,
-          jobId: existingJobId,
-          targetDisplayName: targetRow.displayName,
-          testInfo,
-        });
-        await uploadDownloadedVouchersToBrazePromotionCodeList({
-          page,
-          brazeConfig,
-          minCodesThreshold,
-          targetDisplayName: targetRow.displayName,
-          filePath: csvPath,
-        });
-        return;
-      }
-
-      const body = await loadVouchersBulkJobBody(
-        process.env.OMIO_VOUCHERS_BULK_BODY_PATH ||
-          DEFAULT_VOUCHERS_BULK_JOB_BODY_PATH,
-      );
 
       for (const row of rowsBelowThreshold) {
+        const sourceJobId = extractOmioVouchersBulkJobIdFromDisplayName(
+          row.displayName,
+        );
+        const body = await buildVouchersBulkJobBodyFromSourceJob({
+          omioConfig,
+          token,
+          sourceJobId,
+          batchSize,
+        });
+
         console.log(
-          `Creating Omio vouchers bulk job for Braze Promotion Code list ${row.displayName}.`,
+          `Creating Omio vouchers bulk job for Braze Promotion Code list ${row.displayName} from source job ${sourceJobId} with batchSize ${batchSize}.`,
         );
 
         const csvPath = await createCompletedVouchersBulkJobAndDownload({
@@ -158,6 +132,29 @@ test(
     }
   },
 );
+
+async function buildVouchersBulkJobBodyFromSourceJob({
+  omioConfig,
+  token,
+  sourceJobId,
+  batchSize,
+}: {
+  omioConfig: OmioVoucherApiConfig;
+  token: OmioAccessToken;
+  sourceJobId: string;
+  batchSize: number;
+}): Promise<OmioVouchersBulkJobBody> {
+  const sourceJob = await getOmioVouchersBulkJob({
+    baseUrl: omioConfig.baseUrl,
+    accessToken: token.accessToken,
+    jobId: sourceJobId,
+  });
+
+  expect(sourceJob.status).toBeGreaterThanOrEqual(200);
+  expect(sourceJob.status).toBeLessThan(300);
+
+  return buildOmioVouchersBulkJobBodyFromExistingJob(sourceJob.body, batchSize);
+}
 
 async function createCompletedVouchersBulkJobAndDownload({
   omioConfig,

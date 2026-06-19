@@ -1,14 +1,14 @@
 import { Buffer } from 'node:buffer';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import {
   approveOmioVouchersBulkJob,
+  buildOmioVouchersBulkJobBodyFromExistingJob,
   buildOmioVouchersBulkJobVouchersUrl,
   buildOmioVouchersBulkJobUrl,
   createOmioVouchersBulkJob,
   downloadOmioVouchersBulkJobVouchers,
   getOmioVouchersBulkJob,
-  loadVouchersBulkJobBody,
   readOmioVouchersBulkJobId,
   waitForOmioVouchersBulkJobCompletion,
 } from '../../src/api/omioVouchersBulk';
@@ -91,144 +91,66 @@ test('builds the Omio vouchers bulk job vouchers download URL', () => {
   );
 });
 
-test('loads relative vouchers bulk job body from JSON file', async ({}, testInfo) => {
-  const bodyPath = testInfo.outputPath('vouchers-bulk-job.json');
-  await writeFile(
-    bodyPath,
-    JSON.stringify(RELATIVE_VOUCHERS_BULK_BODY),
-    'utf8',
-  );
-
-  await expect(loadVouchersBulkJobBody(bodyPath)).resolves.toEqual(
-    RELATIVE_VOUCHERS_BULK_BODY,
-  );
-});
-
-test('loads fixed vouchers bulk job body and preserves optional job fields', async ({}, testInfo) => {
-  const bodyPath = testInfo.outputPath('fixed-vouchers-bulk-job.json');
-  await writeFile(bodyPath, JSON.stringify(FIXED_VOUCHERS_BULK_BODY), 'utf8');
-
-  await expect(loadVouchersBulkJobBody(bodyPath)).resolves.toEqual(
-    FIXED_VOUCHERS_BULK_BODY,
-  );
-});
-
-test('fails clearly when vouchers bulk job body is invalid', async ({}, testInfo) => {
-  const bodyPath = testInfo.outputPath('invalid-vouchers-bulk-job.json');
-  await writeFile(bodyPath, JSON.stringify({ batchSize: 1 }), 'utf8');
-
-  await expect(loadVouchersBulkJobBody(bodyPath)).rejects.toThrow(
-    `${bodyPath} must define boolean uppercaseIds.`,
-  );
-});
-
-test('fails clearly when batch size is outside backend bounds', async ({}, testInfo) => {
-  const bodyPath = testInfo.outputPath('invalid-batch-size.json');
-  await writeFile(
-    bodyPath,
-    JSON.stringify({
-      ...RELATIVE_VOUCHERS_BULK_BODY,
-      batchSize: 100001,
-    }),
-    'utf8',
-  );
-
-  await expect(loadVouchersBulkJobBody(bodyPath)).rejects.toThrow(
-    `${bodyPath} batchSize must be an integer from 1 to 100000.`,
-  );
-});
-
-test('fails clearly when required common template fields are missing', async ({}, testInfo) => {
-  const bodyPath = testInfo.outputPath('missing-campaign-name.json');
-  await writeFile(
-    bodyPath,
-    JSON.stringify({
-      ...RELATIVE_VOUCHERS_BULK_BODY,
-      template: {
-        ...RELATIVE_VOUCHERS_BULK_BODY.template,
-        campaignName: '',
+test('builds a vouchers bulk job body from an existing source job', () => {
+  expect(
+    buildOmioVouchersBulkJobBodyFromExistingJob(
+      {
+        batchSize: 100,
+        uppercaseIds: true,
+        status: 'COMPLETED',
+        template: {
+          ...FIXED_VOUCHERS_BULK_BODY.template,
+          voucherId: 'TEMPLATE',
+          includedCountries: [],
+        },
       },
-    }),
-    'utf8',
-  );
-
-  await expect(loadVouchersBulkJobBody(bodyPath)).rejects.toThrow(
-    `${bodyPath} template.campaignName must be a non-empty string.`,
-  );
+      25,
+    ),
+  ).toEqual({
+    batchSize: 25,
+    uppercaseIds: true,
+    template: {
+      ...FIXED_VOUCHERS_BULK_BODY.template,
+      voucherId: 'TEMPLATE',
+      includedCountries: [],
+    },
+  });
 });
 
-test('fails clearly when a relative voucher is missing max price', async ({}, testInfo) => {
-  const bodyPath = testInfo.outputPath('relative-missing-max-price.json');
-  const { maxPrice, ...template } = RELATIVE_VOUCHERS_BULK_BODY.template;
-  await writeFile(
-    bodyPath,
-    JSON.stringify({
-      ...RELATIVE_VOUCHERS_BULK_BODY,
-      template,
-    }),
-    'utf8',
-  );
-
-  await expect(loadVouchersBulkJobBody(bodyPath)).rejects.toThrow(
-    `${bodyPath} template.maxPrice must be a positive integer.`,
-  );
-});
-
-test('fails clearly when a fixed voucher reduction exceeds min price', async ({}, testInfo) => {
-  const bodyPath = testInfo.outputPath('fixed-invalid-reduction.json');
-  await writeFile(
-    bodyPath,
-    JSON.stringify({
-      ...FIXED_VOUCHERS_BULK_BODY,
-      template: {
-        ...FIXED_VOUCHERS_BULK_BODY.template,
-        flatReduction: 2500,
+test('fails clearly when the source job batch size override is invalid', () => {
+  expect(() =>
+    buildOmioVouchersBulkJobBodyFromExistingJob(
+      {
+        uppercaseIds: false,
+        template: RELATIVE_VOUCHERS_BULK_BODY.template,
       },
-    }),
-    'utf8',
-  );
-
-  await expect(loadVouchersBulkJobBody(bodyPath)).rejects.toThrow(
-    `${bodyPath} template.flatReduction must be less than or equal to template.minPrice.`,
-  );
+      0,
+    ),
+  ).toThrow('REPLENISH_BATCH_SIZE must be a positive integer');
 });
 
-test('fails clearly when optional template arrays are empty', async ({}, testInfo) => {
-  const bodyPath = testInfo.outputPath('empty-optional-arrays.json');
-  await writeFile(
-    bodyPath,
-    JSON.stringify({
-      ...RELATIVE_VOUCHERS_BULK_BODY,
-      template: {
-        ...RELATIVE_VOUCHERS_BULK_BODY.template,
-        includedCountries: [],
+test('fails clearly when the source job response is invalid', () => {
+  expect(() => buildOmioVouchersBulkJobBodyFromExistingJob(null, 10)).toThrow(
+    'Omio vouchers bulk source job response must be an object',
+  );
+  expect(() =>
+    buildOmioVouchersBulkJobBodyFromExistingJob(
+      {
+        template: RELATIVE_VOUCHERS_BULK_BODY.template,
       },
-    }),
-    'utf8',
+      10,
+    ),
+  ).toThrow(
+    'Omio vouchers bulk source job response did not include boolean uppercaseIds',
   );
-
-  await expect(loadVouchersBulkJobBody(bodyPath)).rejects.toThrow(
-    `${bodyPath} template.includedCountries must not be empty; omit it when unused.`,
-  );
-});
-
-test('fails clearly when a custom voucher id is used with a bulk batch', async ({}, testInfo) => {
-  const bodyPath = testInfo.outputPath('bulk-custom-voucher-id.json');
-  await writeFile(
-    bodyPath,
-    JSON.stringify({
-      ...FIXED_VOUCHERS_BULK_BODY,
-      template: {
-        ...FIXED_VOUCHERS_BULK_BODY.template,
-        voucherId: 'CUSTOMCODE',
+  expect(() =>
+    buildOmioVouchersBulkJobBodyFromExistingJob(
+      {
+        uppercaseIds: false,
       },
-    }),
-    'utf8',
-  );
-
-  await expect(loadVouchersBulkJobBody(bodyPath)).rejects.toThrow(
-    `${bodyPath} template.voucherId can only be set when batchSize is 1.`,
-  );
+      10,
+    ),
+  ).toThrow('Omio vouchers bulk source job response did not include template');
 });
 
 test('reads vouchers bulk job id from creation response', () => {
@@ -265,7 +187,7 @@ test('creates an Omio vouchers bulk job with bearer token and JSON body', async 
         status: 202,
         text: async () =>
           JSON.stringify({
-            id: 'bulk-job-123',
+            jobId: 'bulk-job-123',
           }),
       };
     },
@@ -274,7 +196,7 @@ test('creates an Omio vouchers bulk job with bearer token and JSON body', async 
   expect(response).toEqual({
     status: 202,
     body: {
-      id: 'bulk-job-123',
+      jobId: 'bulk-job-123',
     },
   });
   expect(calls).toEqual([
@@ -317,7 +239,7 @@ test('approves an Omio vouchers bulk job with bearer token and approval body', a
         status: 200,
         text: async () =>
           JSON.stringify({
-            id: 'bulk-job-123',
+            jobId: 'bulk-job-123',
             status: 'PENDING',
           }),
       };
@@ -327,7 +249,7 @@ test('approves an Omio vouchers bulk job with bearer token and approval body', a
   expect(response).toEqual({
     status: 200,
     body: {
-      id: 'bulk-job-123',
+      jobId: 'bulk-job-123',
       status: 'PENDING',
     },
   });
@@ -382,7 +304,7 @@ test('fails clearly when approved Omio vouchers bulk job is not pending', async 
         status: 200,
         text: async () =>
           JSON.stringify({
-            id: 'bulk-job-123',
+            jobId: 'bulk-job-123',
             status: 'APPROVED',
           }),
       }),
@@ -405,7 +327,7 @@ test('fails clearly when Omio vouchers bulk job approval response has no status'
         status: 200,
         text: async () =>
           JSON.stringify({
-            id: 'bulk-job-123',
+            jobId: 'bulk-job-123',
           }),
       }),
     ),
@@ -438,7 +360,7 @@ test('gets an Omio vouchers bulk job with bearer token', async () => {
         status: 200,
         text: async () =>
           JSON.stringify({
-            id: 'bulk-job-123',
+            jobId: 'bulk-job-123',
             status: 'COMPLETED',
           }),
       };
@@ -448,7 +370,7 @@ test('gets an Omio vouchers bulk job with bearer token', async () => {
   expect(response).toEqual({
     status: 200,
     body: {
-      id: 'bulk-job-123',
+      jobId: 'bulk-job-123',
       status: 'COMPLETED',
     },
   });
@@ -504,7 +426,7 @@ test('polls Omio vouchers bulk job status until completed', async () => {
         status: 200,
         text: async () =>
           JSON.stringify({
-            id: 'bulk-job-123',
+            jobId: 'bulk-job-123',
             status: jobStatus,
           }),
       };
@@ -514,7 +436,7 @@ test('polls Omio vouchers bulk job status until completed', async () => {
   expect(response).toEqual({
     status: 200,
     body: {
-      id: 'bulk-job-123',
+      jobId: 'bulk-job-123',
       status: 'COMPLETED',
     },
   });
@@ -561,7 +483,7 @@ test('fails clearly when polled Omio vouchers bulk job has no status', async () 
         status: 200,
         text: async () =>
           JSON.stringify({
-            id: 'bulk-job-123',
+            jobId: 'bulk-job-123',
           }),
       }),
     ),

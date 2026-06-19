@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import {
+  extractOmioVouchersBulkJobIdFromDisplayName,
   filterActiveVoucherRowsBelowThreshold,
   formatActiveVoucherRow,
   parseVoucherCount,
@@ -177,6 +178,25 @@ test('parses voucher counts with thousands separators', () => {
 test('fails clearly when a voucher count cannot be parsed', () => {
   expect(() => parseVoucherCount('not available', 'VIP Voucher remaining')).toThrow(
     'Unable to parse VIP Voucher remaining: not available',
+  );
+});
+
+test('extracts an Omio vouchers bulk job id from a Braze display name', () => {
+  expect(
+    extractOmioVouchersBulkJobIdFromDisplayName(
+      'norbert_test_2_jobId_97e114cb-362c-4261-b331-20d0ed16d98a',
+    ),
+  ).toBe('97e114cb-362c-4261-b331-20d0ed16d98a');
+  expect(
+    extractOmioVouchersBulkJobIdFromDisplayName(
+      'prefix_jobId_97e114cb-362c-4261-b331-20d0ed16d98a_suffix',
+    ),
+  ).toBe('97e114cb-362c-4261-b331-20d0ed16d98a');
+});
+
+test('fails clearly when a Braze display name has no Omio vouchers bulk job id', () => {
+  expect(() => extractOmioVouchersBulkJobIdFromDisplayName('norbert_test_2')).toThrow(
+    'Unable to extract Omio vouchers bulk jobId from Braze Promotion Code display name: norbert_test_2',
   );
 });
 

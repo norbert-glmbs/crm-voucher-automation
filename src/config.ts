@@ -118,6 +118,16 @@ export function loadMinCodesThreshold(env: NodeJS.ProcessEnv = process.env): num
   );
 }
 
+export function loadReplenishBatchSize(
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  return parsePositiveInteger(
+    requireEnv(env, 'REPLENISH_BATCH_SIZE'),
+    0,
+    'REPLENISH_BATCH_SIZE',
+  );
+}
+
 export function loadOmioVoucherApiConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): OmioVoucherApiConfig {

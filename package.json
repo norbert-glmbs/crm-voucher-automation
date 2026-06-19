@@ -4,8 +4,8 @@
   "main": "index.js",
   "license": "MIT",
   "scripts": {
-    "omio:vouchers-bulk": "RUN_OMIO_VOUCHERS_BULK=true playwright test tests/manual/omio-vouchers-bulk.spec.ts --project=chromium",
-    "omio:vouchers-bulk:headed": "RUN_OMIO_VOUCHERS_BULK=true playwright test tests/manual/omio-vouchers-bulk.spec.ts --project=chromium --headed"
+    "omio:vouchers-bulk-replenish": "RUN_OMIO_VOUCHERS_BULK_REPLENISH=true playwright test tests/manual/omio-vouchers-bulk.spec.ts --project=chromium",
+    "omio:vouchers-bulk-replenish:headed": "RUN_OMIO_VOUCHERS_BULK_REPLENISH=true playwright test tests/manual/omio-vouchers-bulk.spec.ts --project=chromium --headed"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.0",

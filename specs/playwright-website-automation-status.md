@@ -1,6 +1,6 @@
 # Playwright Website Automation Status
 
-Last updated: 2026-06-18
+Last updated: 2026-06-19
 
 Audit scope: current repository code and visible working-tree changes. The root-level `automation-plan.md` and `status.md` files do not exist; the docs being maintained are `specs/playwright-website-automation-plan.md` and this file.
 
@@ -29,10 +29,12 @@ Audit scope: current repository code and visible working-tree changes. The root-
 - [x] Implemented remaining-code parsing and validation, including thousands separators.
 - [x] Implemented filtering for ACTIVE Promotion Code lists whose remaining value is below `MIN_CODES_THRESHOLD`.
 - [x] Implemented a clear no-op path when no Braze Promotion Code list is below the threshold.
-- [x] Added Omio vouchers API base URL selection from `ENV`; QA maps to `https://www.omio.com.qa.goeuro.ninja/vouchers`.
+- [x] Added Omio vouchers API base URL selection from `ENV`; QA currently maps to `http://localhost:8080/vouchers`.
 - [x] Added Omio access-token request support for `POST /oauth/token?grant_type=client_credentials`.
-- [x] Added editable Omio vouchers bulk job body in `config/vouchers-bulk-job.json`.
-- [x] Added validation for Omio vouchers bulk job request bodies, including batch size, template type, money fields, ISO date-time fields, optional arrays, and custom voucher ID rules.
+- [x] Removed `config/vouchers-bulk-job.json` from the replenishment flow.
+- [x] Added `REPLENISH_BATCH_SIZE` as the per-run vouchers bulk batch size input.
+- [x] Added source-job extraction from Braze Promotion Code display names using the `..._jobId_{jobId}_...` naming convention.
+- [x] Added source-job fetch for `GET private/v3/jobs/vouchers-bulk/{jobId}` and creation-body derivation from the source job's `uppercaseIds` and `template`.
 - [x] Added Omio vouchers bulk job creation support for `POST private/v3/jobs/vouchers-bulk`.
 - [x] Added Omio vouchers bulk job approval support for `PATCH private/v3/jobs/vouchers-bulk/{jobId}`.
 - [x] Added Omio vouchers bulk job status support for `GET private/v3/jobs/vouchers-bulk/{jobId}`.
@@ -41,7 +43,6 @@ Audit scope: current repository code and visible working-tree changes. The root-
 - [x] Added retry handling for Omio vouchers CSV downloads.
 - [x] Added non-empty downloaded-file validation.
 - [x] Added support for reading Omio bulk job IDs from the `jobId` response field.
-- [x] Added support for using an existing Omio vouchers bulk job through `OMIO_VOUCHERS_BULK_JOB_ID`.
 - [x] Implemented Braze CSV upload helper that selects a low ACTIVE Promotion Code list, opens its row, uploads a CSV, starts upload, and clicks update list.
 - [x] Added CSV preparation for Braze upload by stripping a leading `voucher_code` header row.
 - [x] Added the full manual replenishment flow in `tests/manual/omio-vouchers-bulk.spec.ts`: log in to Braze, find low lists, create/approve/poll/download Omio jobs, and upload one CSV per low Braze list.
@@ -53,7 +54,7 @@ Audit scope: current repository code and visible working-tree changes. The root-
 - [x] Added tests for voucher row formatting, count parsing, threshold filtering, and no-match output.
 - [x] Added mocked tests for Braze CSV upload to the first low row and to a requested low row.
 - [x] Added mocked tests for Omio token auth.
-- [x] Added mocked tests for Omio vouchers bulk job URL building, request body loading/validation, creation, approval, status polling, CSV download, retries, and error handling.
+- [x] Added mocked tests for Omio vouchers bulk job URL building, source-job body derivation, creation, approval, status polling, CSV download, retries, and error handling.
 
 ## Not Completed Yet
 

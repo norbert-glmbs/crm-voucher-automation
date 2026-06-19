@@ -8,7 +8,7 @@ This is needed because the website does not expose an API for reading the number
 
 ## Current Implementation Audit
 
-Last audited against code: 2026-06-18
+Last audited against code: 2026-06-19
 
 The implementation now lives in the existing root Playwright project, not in a nested `automation/` directory.
 
@@ -24,7 +24,9 @@ The implementation now lives in the existing root Playwright project, not in a n
 - [x] Filter ACTIVE Promotion Code lists below `MIN_CODES_THRESHOLD`.
 - [x] Stop without creating Omio jobs when no Braze list is below the threshold.
 - [x] Request an Omio access token with client-credentials Basic auth.
-- [x] Load and validate the editable Omio vouchers bulk request body from `config/vouchers-bulk-job.json`.
+- [x] Extract a source Omio vouchers bulk job id from each low Braze Promotion Code display name using the `..._jobId_{jobId}_...` naming convention.
+- [x] Fetch the source Omio vouchers bulk job and derive the new POST body from its `uppercaseIds` and `template`.
+- [x] Use `REPLENISH_BATCH_SIZE` as the per-run batch size override for replenishment jobs.
 - [x] Create Omio vouchers bulk jobs through `POST private/v3/jobs/vouchers-bulk`.
 - [x] Approve Omio vouchers bulk jobs through `PATCH private/v3/jobs/vouchers-bulk/{jobId}`.
 - [x] Poll Omio vouchers bulk job status until `COMPLETED`.
@@ -32,7 +34,6 @@ The implementation now lives in the existing root Playwright project, not in a n
 - [x] Retry voucher CSV downloads for transient "not ready" or API failures.
 - [x] Upload downloaded CSVs through the Braze Promotion Code list UI.
 - [x] Strip a leading `voucher_code` CSV header before Braze upload.
-- [x] Support using an existing Omio vouchers bulk job through `OMIO_VOUCHERS_BULK_JOB_ID`.
 - [x] Record useful console logs for threshold decisions, Omio job state, downloads, and uploads.
 - [x] Retain Playwright screenshots, traces, and videos on failure.
 - [x] Cover the core parsing, threshold, Omio API, download, and upload helpers with mocked tests.
@@ -113,7 +114,6 @@ tests/
     omioVouchersBulk.spec.ts
     vouchers.spec.ts
 config/
-  vouchers-bulk-job.json
 playwright.config.ts
 package.json
 README.md
@@ -151,13 +151,12 @@ BRAZE_LOGIN_ALLOW_MANUAL_MFA=
 BRAZE_LOGIN_MFA_TIMEOUT_MS=
 BRAZE_LOGIN_NAVIGATION_TIMEOUT_MS=
 MIN_CODES_THRESHOLD=
-OMIO_VOUCHERS_BULK_BODY_PATH=
-OMIO_VOUCHERS_BULK_JOB_ID=
+REPLENISH_BATCH_SIZE=
 ```
 
 Do not commit real credentials, cookies, downloaded files, or Playwright auth state. Treat saved browser auth state as sensitive because it can contain cookies and tokens.
 
-The code derives the Braze URLs and Omio vouchers API base URL from `ENV`. Omio access tokens are requested at runtime with the shared credentials; there is no committed API token.
+The code derives the Braze URLs and Omio vouchers API base URL from `ENV`. Omio access tokens are requested at runtime with the shared credentials; there is no committed API token. For the current local QA setup, `ENV=QA` points the Omio vouchers API client at `http://localhost:8080/vouchers`.
 
 ## Threshold Rules
 
