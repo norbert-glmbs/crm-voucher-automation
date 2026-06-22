@@ -40,9 +40,37 @@ type UploadVoucherCsvOptions = PrintVoucherRowsBelowThresholdOptions & {
   targetDisplayName?: string;
 };
 
+type OpenNewPromotionCodeListOptions = {
+  vouchersUrl: string;
+  newVoucherUrl: string;
+  displayName: string;
+  codeSnippetName: string;
+  navigationTimeoutMs?: number;
+  formTimeoutMs?: number;
+  log?: (message: string) => void;
+};
+
+type UploadOpenPromotionCodeListCsvOptions = {
+  filePath: string;
+  displayName?: string;
+  log?: (message: string) => void;
+};
+
 export type UploadVoucherCsvResult = ActiveVoucherRow & {
   filePath: string;
   uploadedFilePath: string;
+};
+
+export type OpenNewPromotionCodeListResult = {
+  displayName: string;
+  codeSnippetName: string;
+  finalUrl: string;
+};
+
+export type UploadOpenPromotionCodeListCsvResult = {
+  filePath: string;
+  uploadedFilePath: string;
+  displayName?: string;
 };
 
 const DEFAULT_NAVIGATION_TIMEOUT_MS = 30_000;
@@ -125,6 +153,53 @@ export async function uploadCsvToActiveVoucherRowBelowThresholdFromBraze(
     ...rowToUpdate,
     filePath: options.filePath,
     uploadedFilePath,
+  };
+}
+
+export async function openNewPromotionCodeListFromBraze(
+  page: Page,
+  options: OpenNewPromotionCodeListOptions,
+): Promise<OpenNewPromotionCodeListResult> {
+  await goToBrazeVouchersPage(page, options.vouchersUrl, options.navigationTimeoutMs);
+
+  await openNewPromotionCodeListForm(page, options);
+  await fillNewPromotionCodeListFields(
+    page,
+    options.displayName,
+    options.codeSnippetName,
+    options.formTimeoutMs ?? options.navigationTimeoutMs ?? DEFAULT_TABLE_TIMEOUT_MS,
+  );
+
+  options.log?.(
+    `Prepared new Braze Promotion Code list ${options.displayName} with Code Snippet Name ${options.codeSnippetName}`,
+  );
+
+  return {
+    displayName: options.displayName,
+    codeSnippetName: options.codeSnippetName,
+    finalUrl: page.url(),
+  };
+}
+
+export async function uploadCsvToOpenPromotionCodeListFromBraze(
+  page: Page,
+  options: UploadOpenPromotionCodeListCsvOptions,
+): Promise<UploadOpenPromotionCodeListCsvResult> {
+  const uploadedFilePath = await prepareCsvForBrazeUpload(options.filePath);
+
+  options.log?.(`Uploading CSV ${uploadedFilePath}`);
+  await uploadCsvToOpenVoucherList(page, uploadedFilePath);
+
+  if (options.displayName) {
+    options.log?.(`Uploaded CSV to Braze Promotion Code list ${options.displayName}`);
+  } else {
+    options.log?.('Uploaded CSV to open Braze Promotion Code list');
+  }
+
+  return {
+    filePath: options.filePath,
+    uploadedFilePath,
+    displayName: options.displayName,
   };
 }
 
@@ -231,6 +306,94 @@ export function findOmioVouchersBulkJobIdFromDisplayName(
   const match = displayName.match(OMIO_VOUCHERS_BULK_JOB_ID_PATTERN);
 
   return match?.[1] ?? null;
+}
+
+async function openNewPromotionCodeListForm(
+  page: Page,
+  options: OpenNewPromotionCodeListOptions,
+): Promise<void> {
+  const createButton = await waitForVisibleLocator(
+    page,
+    [
+      page.getByRole('button', { name: /create promotion code list/i }),
+      page.getByRole('link', { name: /create promotion code list/i }),
+      page.getByText(/create promotion code list/i),
+    ],
+    Math.min(options.navigationTimeoutMs ?? DEFAULT_NAVIGATION_TIMEOUT_MS, 5_000),
+  );
+
+  if (createButton) {
+    options.log?.('Opening Braze Create Promotion Code List form');
+    await clickAndWaitForPossibleNavigation(page, createButton);
+    return;
+  }
+
+  options.log?.(
+    `Create Promotion Code List button was not visible; opening ${options.newVoucherUrl}`,
+  );
+  await page.goto(options.newVoucherUrl, { waitUntil: 'domcontentloaded' });
+
+  try {
+    await page.waitForLoadState('networkidle', {
+      timeout: Math.min(
+        options.navigationTimeoutMs ?? DEFAULT_NAVIGATION_TIMEOUT_MS,
+        5_000,
+      ),
+    });
+  } catch {
+    // Braze pages may keep background requests open; the form wait below is decisive.
+  }
+}
+
+async function fillNewPromotionCodeListFields(
+  page: Page,
+  displayName: string,
+  codeSnippetName: string,
+  timeoutMs: number,
+): Promise<void> {
+  const nameInput = await waitForVisibleLocator(
+    page,
+    [
+      page.getByRole('textbox', { name: /^name$/i }),
+      page.getByLabel(/^name$/i),
+      page.getByPlaceholder(/enter promotion code name|^name$/i),
+      page.locator('input.db-name-description--name-input').first(),
+      page
+        .locator(
+          'input[name="name"], input[id="name"], input[name$="[name]"], input[id$="_name"]',
+        )
+        .first(),
+    ],
+    timeoutMs,
+  );
+
+  if (!nameInput) {
+    throw new Error('Braze Promotion Code List Name input was not visible.');
+  }
+
+  await nameInput.fill(displayName);
+
+  const codeSnippetNameInput = await waitForVisibleLocator(
+    page,
+    [
+      page.getByRole('textbox', { name: /code snippet name/i }),
+      page.getByLabel(/code snippet name/i),
+      page.getByPlaceholder(/code snippet name/i),
+      page.locator('#db-voucher-editor-code-snippet-name-field').first(),
+      page
+        .locator(
+          'input[name*="code_snippet" i], input[name*="snippet" i], input[id*="code_snippet" i], input[id*="code-snippet" i]',
+        )
+        .first(),
+    ],
+    timeoutMs,
+  );
+
+  if (!codeSnippetNameInput) {
+    throw new Error('Braze Code Snippet Name input was not visible.');
+  }
+
+  await codeSnippetNameInput.fill(codeSnippetName);
 }
 
 async function readVoucherTableModel(
@@ -412,12 +575,12 @@ async function uploadCsvToOpenVoucherList(page: Page, filePath: string): Promise
   await clickAndWaitForPossibleNavigation(page, startUploadButton);
 
   const updateButton = await waitForVisibleLocator(page, [
-    page.getByRole('button', { name: /update list/i }),
-    page.getByText(/update list/i),
+    page.getByRole('button', { name: /update list|create list|save list/i }),
+    page.getByText(/update list|create list|save list/i),
   ]);
 
   if (!updateButton) {
-    throw new Error('Braze Update list button was not visible.');
+    throw new Error('Braze Update/Create list button was not visible.');
   }
 
   await clickAndWaitForPossibleNavigation(page, updateButton);

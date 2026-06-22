@@ -5,10 +5,12 @@ import {
   filterActiveVoucherRowsBelowThreshold,
   formatActiveVoucherRow,
   findOmioVouchersBulkJobIdFromDisplayName,
+  openNewPromotionCodeListFromBraze,
   parseVoucherCount,
   printActiveVoucherRowsBelowThreshold,
   readActiveVoucherRows,
   uploadCsvToActiveVoucherRowBelowThresholdFromBraze,
+  uploadCsvToOpenPromotionCodeListFromBraze,
 } from '../../src/website/vouchers';
 
 test('reads active voucher rows from a native table', async ({ page }) => {
@@ -203,6 +205,188 @@ test('fails clearly when a Braze display name has no Omio vouchers bulk job id',
   expect(() => extractOmioVouchersBulkJobIdFromDisplayName('norbert_test_2')).toThrow(
     'Unable to extract Omio vouchers bulk jobId from Braze Promotion Code display name: norbert_test_2',
   );
+});
+
+test('opens and fills a new promotion code list from the create button', async ({
+  page,
+}) => {
+  await page.route('https://braze.example/vouchers', async (route) => {
+    await route.fulfill({
+      contentType: 'text/html',
+      body: `
+        <main>
+          <button id="create-list">Create Promotion Code List</button>
+          <section id="details"></section>
+          <script>
+            document.getElementById('create-list').addEventListener('click', function () {
+              document.getElementById('details').innerHTML =
+                '<label>Name <input id="name" /></label>' +
+                '<label>Code Snippet Name <input id="code-snippet-name" /></label>';
+            });
+          </script>
+        </main>
+      `,
+    });
+  });
+
+  const result = await openNewPromotionCodeListFromBraze(page, {
+    vouchersUrl: 'https://braze.example/vouchers',
+    newVoucherUrl: 'https://braze.example/vouchers/new/test-env',
+    displayName: '20260622_campaign_jobId_97e114cb-362c-4261-b331-20d0ed16d98a',
+    codeSnippetName: '20260622_campaign',
+    navigationTimeoutMs: 1_000,
+    formTimeoutMs: 1_000,
+  });
+
+  expect(result).toMatchObject({
+    displayName: '20260622_campaign_jobId_97e114cb-362c-4261-b331-20d0ed16d98a',
+    codeSnippetName: '20260622_campaign',
+  });
+  await expect(page.locator('#name')).toHaveValue(
+    '20260622_campaign_jobId_97e114cb-362c-4261-b331-20d0ed16d98a',
+  );
+  await expect(page.locator('#code-snippet-name')).toHaveValue('20260622_campaign');
+});
+
+test('fills the real Braze promotion code list input selectors', async ({ page }) => {
+  await page.route('https://braze.example/vouchers', async (route) => {
+    await route.fulfill({
+      contentType: 'text/html',
+      body: '<main><h1>Promotion Codes</h1></main>',
+    });
+  });
+  await page.route('https://braze.example/vouchers/new/test-env', async (route) => {
+    await route.fulfill({
+      contentType: 'text/html',
+      body: `
+        <main id="main-content">
+          <form class="db-voucher-editor">
+            <section>
+              <header>Promotion Code List</header>
+              <fieldset class="db-name-description">
+                <label class="bcl-field-label">Name</label>
+                <div class="bcl-field-label-body">
+                  <input
+                    placeholder="Enter Promotion Code Name"
+                    class="bcl-input db-name-description--name-input"
+                    type="text"
+                    value=""
+                  >
+                </div>
+              </fieldset>
+              <fieldset>
+                <legend><h4>Code Snippet</h4></legend>
+                <label class="bcl-field-label">Code Snippet Name</label>
+                <div class="bcl-field-label-body">
+                  <input
+                    id="db-voucher-editor-code-snippet-name-field"
+                    class="bcl-input"
+                    type="text"
+                    value=""
+                  >
+                </div>
+              </fieldset>
+            </section>
+          </form>
+        </main>
+      `,
+    });
+  });
+
+  await openNewPromotionCodeListFromBraze(page, {
+    vouchersUrl: 'https://braze.example/vouchers',
+    newVoucherUrl: 'https://braze.example/vouchers/new/test-env',
+    displayName: '20260622_campaign_jobId_97e114cb-362c-4261-b331-20d0ed16d98a',
+    codeSnippetName: '20260622_campaign',
+    navigationTimeoutMs: 1_000,
+    formTimeoutMs: 1_000,
+  });
+
+  await expect(page.locator('.db-name-description--name-input')).toHaveValue(
+    '20260622_campaign_jobId_97e114cb-362c-4261-b331-20d0ed16d98a',
+  );
+  await expect(page.locator('#db-voucher-editor-code-snippet-name-field')).toHaveValue(
+    '20260622_campaign',
+  );
+});
+
+test('opens the new promotion code list URL when the create button is unavailable', async ({
+  page,
+}) => {
+  await page.route('https://braze.example/vouchers', async (route) => {
+    await route.fulfill({
+      contentType: 'text/html',
+      body: '<main><h1>Promotion Codes</h1></main>',
+    });
+  });
+  await page.route('https://braze.example/vouchers/new/test-env', async (route) => {
+    await route.fulfill({
+      contentType: 'text/html',
+      body: `
+        <main>
+          <label>Name <input id="name" /></label>
+          <label>Code Snippet Name <input id="code-snippet-name" /></label>
+        </main>
+      `,
+    });
+  });
+
+  const result = await openNewPromotionCodeListFromBraze(page, {
+    vouchersUrl: 'https://braze.example/vouchers',
+    newVoucherUrl: 'https://braze.example/vouchers/new/test-env',
+    displayName: '20260622_campaign_jobId_97e114cb-362c-4261-b331-20d0ed16d98a',
+    codeSnippetName: '20260622_campaign',
+    navigationTimeoutMs: 1_000,
+    formTimeoutMs: 1_000,
+  });
+
+  expect(result.finalUrl).toBe('https://braze.example/vouchers/new/test-env');
+  await expect(page.locator('#name')).toHaveValue(
+    '20260622_campaign_jobId_97e114cb-362c-4261-b331-20d0ed16d98a',
+  );
+  await expect(page.locator('#code-snippet-name')).toHaveValue('20260622_campaign');
+});
+
+test('uploads a CSV to an open new promotion code list', async ({ page }, testInfo) => {
+  const csvPath = testInfo.outputPath('new-list-vouchers.csv');
+  await writeFile(csvPath, 'voucher_code\nNEW123\n', 'utf8');
+  await page.setContent(`
+    <main>
+      <button id="show-upload">Upload CSV</button>
+      <div id="upload-controls" hidden>
+        <input id="voucher-file" type="file">
+        <button id="start-upload">Start Upload</button>
+      </div>
+      <button id="create-list" disabled>Create list</button>
+      <div id="uploaded-file"></div>
+      <script>
+        document.getElementById('show-upload').addEventListener('click', function () {
+          document.getElementById('upload-controls').hidden = false;
+        });
+        document.getElementById('start-upload').addEventListener('click', async function () {
+          const file = document.getElementById('voucher-file').files[0];
+          document.getElementById('create-list').disabled = false;
+          window.uploadedCsvContent = file ? await file.text() : 'missing';
+        });
+        document.getElementById('create-list').addEventListener('click', function () {
+          document.getElementById('uploaded-file').textContent = window.uploadedCsvContent || 'missing';
+        });
+      </script>
+    </main>
+  `);
+
+  const result = await uploadCsvToOpenPromotionCodeListFromBraze(page, {
+    filePath: csvPath,
+    displayName: '20260622_campaign',
+  });
+
+  expect(result).toEqual({
+    filePath: csvPath,
+    uploadedFilePath: csvPath.replace('.csv', '.braze-upload.csv'),
+    displayName: '20260622_campaign',
+  });
+  await expect(page.locator('#uploaded-file')).toHaveText('NEW123\n');
+  await expect(readFile(result.uploadedFilePath, 'utf8')).resolves.toBe('NEW123\n');
 });
 
 test('uploads a CSV to the first active voucher row below threshold', async ({

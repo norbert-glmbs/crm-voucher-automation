@@ -3,12 +3,15 @@ import { expect, test } from '@playwright/test';
 import {
   buildBrazeAppUsageUrl,
   buildBrazeEnvId,
+  buildBrazeNewVoucherUrl,
+  buildBrazePromotionCodeListName,
   buildBrazeVouchersUrl,
   buildOmioVouchersBaseUrl,
   loadBrazeLoginConfig,
   loadEnvFileIntoProcessEnv,
   loadMinCodesThreshold,
   loadOmioVoucherApiConfig,
+  loadOmioVouchersBulkCreateInputs,
   loadReplenishBatchSize,
 } from '../../src/config';
 
@@ -22,6 +25,21 @@ test('builds the Braze vouchers URL from the selected environment id', () => {
   expect(buildBrazeVouchersUrl('production-env')).toBe(
     'https://dashboard-01.braze.com/integrations/vouchers/vouchers/production-env?locale=en',
   );
+});
+
+test('builds the Braze new voucher URL from the selected environment id', () => {
+  expect(buildBrazeNewVoucherUrl('production-env')).toBe(
+    'https://dashboard-01.braze.com/integrations/vouchers/new/production-env?locale=en',
+  );
+});
+
+test('builds a Braze Promotion Code list name with a source job id', () => {
+  expect(
+    buildBrazePromotionCodeListName(
+      '20260622_campaign',
+      '97e114cb-362c-4261-b331-20d0ed16d98a',
+    ),
+  ).toBe('20260622_campaign_jobId_97e114cb-362c-4261-b331-20d0ed16d98a');
 });
 
 test('maps QA to the Braze QA environment id', () => {
@@ -80,6 +98,8 @@ test('loads Braze login config from ENV=QA', () => {
       'https://dashboard-01.braze.com/dashboard/app_usage/592d2af81b0e4d67991edb6b?locale=en',
     vouchersUrl:
       'https://dashboard-01.braze.com/integrations/vouchers/vouchers/592d2af81b0e4d67991edb6b?locale=en',
+    newVoucherUrl:
+      'https://dashboard-01.braze.com/integrations/vouchers/new/592d2af81b0e4d67991edb6b?locale=en',
   });
 });
 
@@ -166,6 +186,61 @@ test('requires the replenish batch size to be a positive integer', () => {
   expect(() => loadReplenishBatchSize({ REPLENISH_BATCH_SIZE: '0' })).toThrow(
     'REPLENISH_BATCH_SIZE must be a positive integer',
   );
+});
+
+test('loads Omio vouchers bulk create inputs', () => {
+  expect(
+    loadOmioVouchersBulkCreateInputs({
+      JOB_ID: '97e114cb-362c-4261-b331-20d0ed16d98a',
+      TARGET_BATCH_SIZE: '25',
+      CAMPAIGN_NAME: '20260622_campaign',
+    }),
+  ).toEqual({
+    sourceJobId: '97e114cb-362c-4261-b331-20d0ed16d98a',
+    targetBatchSize: 25,
+    campaignName: '20260622_campaign',
+    promotionCodeListName:
+      '20260622_campaign_jobId_97e114cb-362c-4261-b331-20d0ed16d98a',
+    codeSnippetName: '20260622_campaign',
+  });
+});
+
+test('requires Omio vouchers bulk create inputs', () => {
+  expect(() =>
+    loadOmioVouchersBulkCreateInputs({
+      TARGET_BATCH_SIZE: '25',
+      CAMPAIGN_NAME: '20260622_campaign',
+    }),
+  ).toThrow('Missing required environment variable: JOB_ID');
+  expect(() =>
+    loadOmioVouchersBulkCreateInputs({
+      JOB_ID: '97e114cb-362c-4261-b331-20d0ed16d98a',
+      CAMPAIGN_NAME: '20260622_campaign',
+    }),
+  ).toThrow('Missing required environment variable: TARGET_BATCH_SIZE');
+  expect(() =>
+    loadOmioVouchersBulkCreateInputs({
+      JOB_ID: '97e114cb-362c-4261-b331-20d0ed16d98a',
+      TARGET_BATCH_SIZE: '25',
+    }),
+  ).toThrow('Missing required environment variable: CAMPAIGN_NAME');
+});
+
+test('requires the target batch size to fit the vouchers bulk API bounds', () => {
+  expect(() =>
+    loadOmioVouchersBulkCreateInputs({
+      JOB_ID: '97e114cb-362c-4261-b331-20d0ed16d98a',
+      TARGET_BATCH_SIZE: '0',
+      CAMPAIGN_NAME: '20260622_campaign',
+    }),
+  ).toThrow('TARGET_BATCH_SIZE must be a positive integer');
+  expect(() =>
+    loadOmioVouchersBulkCreateInputs({
+      JOB_ID: '97e114cb-362c-4261-b331-20d0ed16d98a',
+      TARGET_BATCH_SIZE: '100001',
+      CAMPAIGN_NAME: '20260622_campaign',
+    }),
+  ).toThrow('TARGET_BATCH_SIZE must be less than or equal to 100000');
 });
 
 test('builds the Omio QA vouchers base URL', () => {

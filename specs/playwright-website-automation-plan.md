@@ -8,7 +8,7 @@ This is needed because the website does not expose an API for reading the number
 
 ## Current Implementation Audit
 
-Last audited against code: 2026-06-19
+Last audited against code: 2026-06-22
 
 The implementation now lives in the existing root Playwright project, not in a nested `automation/` directory.
 
@@ -28,6 +28,10 @@ The implementation now lives in the existing root Playwright project, not in a n
 - [x] Skip low Braze Promotion Code lists whose display name does not contain a source Omio vouchers bulk job id.
 - [x] Fetch the source Omio vouchers bulk job and derive the new POST body from its `uppercaseIds` and `template`.
 - [x] Use `REPLENISH_BATCH_SIZE` as the per-run batch size override for replenishment jobs.
+- [x] Use `JOB_ID`, `TARGET_BATCH_SIZE`, and `CAMPAIGN_NAME` to start a new Braze Promotion Code list create flow.
+- [x] Open the Braze new Promotion Code List form with the `Create Promotion Code List` button or `/integrations/vouchers/new/{envId}` fallback URL.
+- [x] Fill new Braze Promotion Code list `Name` with `{CAMPAIGN_NAME}_jobId_{JOB_ID}` and `Code Snippet Name` with `CAMPAIGN_NAME`.
+- [x] Use `TARGET_BATCH_SIZE` as the batch size override for one-off create jobs.
 - [x] Create Omio vouchers bulk jobs through `POST private/v3/jobs/vouchers-bulk`.
 - [x] Approve Omio vouchers bulk jobs through `PATCH private/v3/jobs/vouchers-bulk/{jobId}`.
 - [x] Poll Omio vouchers bulk job status until `COMPLETED`.
@@ -39,6 +43,7 @@ The implementation now lives in the existing root Playwright project, not in a n
 - [x] Retain Playwright screenshots, traces, and videos on failure.
 - [x] Cover the core parsing, threshold, Omio API, download, and upload helpers with mocked tests.
 - [ ] Verify the real Braze login, table selectors, and upload controls with valid QA/PROD credentials.
+- [ ] Verify the real Braze new Promotion Code List button/form selectors with valid QA/PROD credentials.
 - [ ] Confirm whether the real Braze account can run unattended without MFA or CAPTCHA.
 - [ ] Add durable duplicate-upload prevention or run history.
 - [ ] Add production scheduling/deployment.
@@ -153,6 +158,9 @@ BRAZE_LOGIN_MFA_TIMEOUT_MS=
 BRAZE_LOGIN_NAVIGATION_TIMEOUT_MS=
 MIN_CODES_THRESHOLD=
 REPLENISH_BATCH_SIZE=
+JOB_ID=
+TARGET_BATCH_SIZE=
+CAMPAIGN_NAME=
 ```
 
 Do not commit real credentials, cookies, downloaded files, or Playwright auth state. Treat saved browser auth state as sensitive because it can contain cookies and tokens.

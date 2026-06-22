@@ -1,6 +1,6 @@
 # Playwright Website Automation Status
 
-Last updated: 2026-06-19
+Last updated: 2026-06-22
 
 Audit scope: current repository code and visible working-tree changes. The root-level `automation-plan.md` and `status.md` files do not exist; the docs being maintained are `specs/playwright-website-automation-plan.md` and this file.
 
@@ -13,6 +13,7 @@ Audit scope: current repository code and visible working-tree changes. The root-
 - [x] Added Braze environment ID mapping for QA and PROD.
 - [x] Added Braze app usage URL generation.
 - [x] Added Braze vouchers URL generation for `https://dashboard-01.braze.com/integrations/vouchers/vouchers/{envId}?locale=en`.
+- [x] Added Braze new Promotion Code list URL generation for `https://dashboard-01.braze.com/integrations/vouchers/new/{envId}?locale=en`.
 - [x] Added shared `LOGIN_USERNAME` and `PASSWORD` configuration for Braze login and Omio client-credentials authentication.
 - [x] Added validation for required credentials.
 - [x] Added `BRAZE_AUTH_STATE_PATH`, `BRAZE_LOGIN_ALLOW_MANUAL_MFA`, `BRAZE_LOGIN_MFA_TIMEOUT_MS`, and `BRAZE_LOGIN_NAVIGATION_TIMEOUT_MS` configuration.
@@ -33,6 +34,7 @@ Audit scope: current repository code and visible working-tree changes. The root-
 - [x] Added Omio access-token request support for `POST /oauth/token?grant_type=client_credentials`.
 - [x] Removed `config/vouchers-bulk-job.json` from the replenishment flow.
 - [x] Added `REPLENISH_BATCH_SIZE` as the per-run vouchers bulk batch size input.
+- [x] Added `JOB_ID`, `TARGET_BATCH_SIZE`, and `CAMPAIGN_NAME` inputs for creating a new Braze Promotion Code list from an existing Omio source job.
 - [x] Added source-job extraction from Braze Promotion Code display names using the `..._jobId_{jobId}_...` naming convention.
 - [x] Added skip handling for low Braze Promotion Code lists whose display name does not contain a source job id.
 - [x] Added source-job fetch for `GET private/v3/jobs/vouchers-bulk/{jobId}` and creation-body derivation from the source job's `uppercaseIds` and `template`.
@@ -45,15 +47,18 @@ Audit scope: current repository code and visible working-tree changes. The root-
 - [x] Added non-empty downloaded-file validation.
 - [x] Added support for reading Omio bulk job IDs from the `jobId` response field.
 - [x] Implemented Braze CSV upload helper that selects a low ACTIVE Promotion Code list, opens its row, uploads a CSV, starts upload, and clicks update list.
+- [x] Implemented Braze new Promotion Code list helper that uses the `Create Promotion Code List` button or falls back to `/integrations/vouchers/new/{envId}`, then fills `Name` and `Code Snippet Name`.
 - [x] Added CSV preparation for Braze upload by stripping a leading `voucher_code` header row.
 - [x] Added the full manual replenishment flow in `tests/manual/omio-vouchers-bulk.spec.ts`: log in to Braze, find low lists, create/approve/poll/download Omio jobs, and upload one CSV per low Braze list.
-- [x] Added manual specs for Braze login, Braze vouchers scanning, Omio auth, and Omio vouchers bulk replenishment.
+- [x] Added the full manual create flow in `tests/manual/omio-vouchers-bulk-create.spec.ts`: log in to Braze, start a new Promotion Code list, create/approve/poll/download an Omio job from `JOB_ID`, and upload the CSV.
+- [x] Added manual specs for Braze login, Braze vouchers scanning, Omio auth, Omio vouchers bulk replenishment, and Omio vouchers bulk create.
 - [x] Added a shared manual-spec helper so individual live steps can run standalone or as part of the full Braze flow.
 - [x] Added mocked Playwright tests for Braze login and direct redirect to the vouchers page.
 - [x] Added config tests for environment-specific Braze URL generation, Omio base URL generation, required `ENV`, credentials, and threshold validation.
 - [x] Added mocked tests for native table and ARIA grid voucher extraction.
 - [x] Added tests for voucher row formatting, count parsing, threshold filtering, and no-match output.
 - [x] Added mocked tests for Braze CSV upload to the first low row and to a requested low row.
+- [x] Added mocked tests for opening/filling a new Braze Promotion Code list and uploading a CSV to the new-list form.
 - [x] Added mocked tests for Omio token auth.
 - [x] Added mocked tests for Omio vouchers bulk job URL building, source-job body derivation, creation, approval, status polling, CSV download, retries, and error handling.
 
@@ -62,6 +67,7 @@ Audit scope: current repository code and visible working-tree changes. The root-
 - [ ] Verify the real Braze login flow with valid credentials and `ENV=QA` or `ENV=PROD`.
 - [ ] Confirm whether the real Braze account requires MFA/CAPTCHA on every run.
 - [ ] Verify the real Braze vouchers page table selectors with valid credentials and `ENV=QA` or `ENV=PROD`.
+- [ ] Verify the real Braze Create Promotion Code List button, direct new-list URL, `Name`, and `Code Snippet Name` selectors with valid credentials.
 - [ ] Verify the real Braze upload controls and post-upload success state with valid credentials.
 - [ ] Verify the real Omio vouchers bulk create/approve/poll/download flow against the intended QA/PROD endpoint.
 - [ ] Add stronger downloaded-file validation beyond non-empty content, such as expected CSV extension, MIME type when available, or CSV shape.

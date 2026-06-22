@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 export type BrazeLoginConfig = {
   targetUrl: string;
   vouchersUrl: string;
+  newVoucherUrl: string;
   envId: string;
   username: string;
   password: string;
@@ -21,16 +22,25 @@ export type OmioVoucherApiConfig = {
   password: string;
 };
 
+export type OmioVouchersBulkCreateInputs = {
+  sourceJobId: string;
+  targetBatchSize: number;
+  campaignName: string;
+  promotionCodeListName: string;
+  codeSnippetName: string;
+};
+
 const DEFAULT_BRAZE_DASHBOARD_ORIGIN = 'https://dashboard-01.braze.com';
 const DEFAULT_AUTH_STATE_PATH = '.playwright/.auth/braze.json';
 const DEFAULT_MFA_TIMEOUT_MS = 120_000;
 const DEFAULT_NAVIGATION_TIMEOUT_MS = 30_000;
+const MAX_VOUCHERS_BULK_BATCH_SIZE = 100_000;
 const BRAZE_ENV_IDS: Record<OmioEnv, string> = {
   QA: '592d2af81b0e4d67991edb6b',
   PROD: '577e3b2a56ec312e6058236f',
 };
 const OMIO_VOUCHER_BASE_URLS: Record<OmioEnv, string> = {
-  QA: 'http://localhost:8080/vouchers',
+  QA: 'https://www.omio.com.qa.goeuro.ninja/vouchers',
   PROD: 'https://www.omio.com/vouchers',
 };
 
@@ -92,6 +102,10 @@ export function loadBrazeLoginConfig(
       envId,
       env.BRAZE_DASHBOARD_ORIGIN || DEFAULT_BRAZE_DASHBOARD_ORIGIN,
     ),
+    newVoucherUrl: buildBrazeNewVoucherUrl(
+      envId,
+      env.BRAZE_DASHBOARD_ORIGIN || DEFAULT_BRAZE_DASHBOARD_ORIGIN,
+    ),
     envId,
     username,
     password,
@@ -126,6 +140,28 @@ export function loadReplenishBatchSize(
     0,
     'REPLENISH_BATCH_SIZE',
   );
+}
+
+export function loadOmioVouchersBulkCreateInputs(
+  env: NodeJS.ProcessEnv = process.env,
+): OmioVouchersBulkCreateInputs {
+  const sourceJobId = requireNonEmptyEnv(env, 'JOB_ID');
+  const campaignName = requireNonEmptyEnv(env, 'CAMPAIGN_NAME');
+  const targetBatchSize = parseVouchersBulkBatchSize(
+    requireEnv(env, 'TARGET_BATCH_SIZE'),
+    'TARGET_BATCH_SIZE',
+  );
+
+  return {
+    sourceJobId,
+    targetBatchSize,
+    campaignName,
+    promotionCodeListName: buildBrazePromotionCodeListName(
+      campaignName,
+      sourceJobId,
+    ),
+    codeSnippetName: campaignName,
+  };
 }
 
 export function loadOmioVoucherApiConfig(
@@ -168,6 +204,26 @@ export function buildBrazeVouchersUrl(
   return url.toString();
 }
 
+export function buildBrazeNewVoucherUrl(
+  envId: string,
+  dashboardOrigin = DEFAULT_BRAZE_DASHBOARD_ORIGIN,
+): string {
+  const url = new URL(
+    `/integrations/vouchers/new/${encodeURIComponent(envId)}`,
+    dashboardOrigin,
+  );
+  url.searchParams.set('locale', 'en');
+
+  return url.toString();
+}
+
+export function buildBrazePromotionCodeListName(
+  campaignName: string,
+  jobId: string,
+): string {
+  return `${campaignName}_jobId_${jobId}`;
+}
+
 export function buildOmioVouchersBaseUrl(omioEnv: OmioEnv): string {
   return OMIO_VOUCHER_BASE_URLS[omioEnv];
 }
@@ -208,6 +264,16 @@ function requireEnv(env: NodeJS.ProcessEnv, key: string): string {
   return value;
 }
 
+function requireNonEmptyEnv(env: NodeJS.ProcessEnv, key: string): string {
+  const value = requireEnv(env, key).trim();
+
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${key}`);
+  }
+
+  return value;
+}
+
 function parseBoolean(value: string | undefined, defaultValue: boolean): boolean {
   if (value === undefined || value === '') {
     return defaultValue;
@@ -237,6 +303,18 @@ function parsePositiveInteger(
 
   if (!Number.isInteger(parsed) || parsed <= 0) {
     throw new Error(`${envKey} must be a positive integer`);
+  }
+
+  return parsed;
+}
+
+function parseVouchersBulkBatchSize(value: string, envKey: string): number {
+  const parsed = parsePositiveInteger(value, 0, envKey);
+
+  if (parsed > MAX_VOUCHERS_BULK_BATCH_SIZE) {
+    throw new Error(
+      `${envKey} must be less than or equal to ${MAX_VOUCHERS_BULK_BATCH_SIZE}`,
+    );
   }
 
   return parsed;
