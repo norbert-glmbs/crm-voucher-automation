@@ -8,6 +8,7 @@ import {
   downloadOmioVouchersBulkJobVouchers,
   getOmioVouchersBulkJob,
   readOmioVouchersBulkJobId,
+  splitOmioVouchersBulkBatchSize,
   waitForOmioVouchersBulkJobCompletion,
 } from '../../src/api/omioVouchersBulk';
 import {
@@ -23,7 +24,7 @@ import {
   findOmioVouchersBulkJobIdFromDisplayName,
   printActiveVoucherRowsBelowThresholdFromBraze,
   type ActiveVoucherRow,
-  uploadCsvToActiveVoucherRowBelowThresholdFromBraze,
+  uploadCsvToActiveVoucherRowFromBraze,
 } from '../../src/website/vouchers';
 import {
   getReadableFilePath,
@@ -104,34 +105,50 @@ test(
 
       const omioConfig = loadOmioVoucherApiConfig();
       const token = await requestOmioAccessToken(omioConfig);
+      const batchSizeChunks = splitOmioVouchersBulkBatchSize(batchSize);
+
+      if (batchSizeChunks.length > 1) {
+        console.log(
+          `REPLENISH_BATCH_SIZE[${batchSize}] exceeds the Omio per-request limit; splitting into chunks: ${batchSizeChunks.join(', ')}.`,
+        );
+      }
 
       for (const row of rowsWithSourceJobIds) {
-        const body = await buildVouchersBulkJobBodyFromSourceJob({
+        const sourceJob = await getVouchersBulkSourceJob({
           omioConfig,
           token,
           sourceJobId: row.sourceJobId,
-          batchSize,
         });
 
-        console.log(
-          `Creating Omio vouchers bulk job for Braze Promotion Code list ${row.displayName} from source job ${row.sourceJobId} with batchSize ${batchSize}.`,
-        );
+        for (const [chunkIndex, chunkBatchSize] of batchSizeChunks.entries()) {
+          const body = buildOmioVouchersBulkJobBodyFromExistingJob(
+            sourceJob.body,
+            chunkBatchSize,
+          );
 
-        const csvPath = await createCompletedVouchersBulkJobAndDownload({
-          omioConfig,
-          token,
-          body,
-          targetDisplayName: row.displayName,
-          testInfo,
-        });
+          console.log(
+            `Creating Omio vouchers bulk job ${chunkIndex + 1}/${
+              batchSizeChunks.length
+            } for Braze Promotion Code list ${
+              row.displayName
+            } from source job ${row.sourceJobId} with batchSize ${chunkBatchSize}.`,
+          );
 
-        await uploadDownloadedVouchersToBrazePromotionCodeList({
-          page,
-          brazeConfig,
-          minCodesThreshold,
-          targetDisplayName: row.displayName,
-          filePath: csvPath,
-        });
+          const csvPath = await createCompletedVouchersBulkJobAndDownload({
+            omioConfig,
+            token,
+            body,
+            targetDisplayName: row.displayName,
+            testInfo,
+          });
+
+          await uploadDownloadedVouchersToBrazePromotionCodeList({
+            page,
+            brazeConfig,
+            targetDisplayName: row.displayName,
+            filePath: csvPath,
+          });
+        }
 
         console.log(
           `Finished replenishing Braze Promotion Code list ${row.displayName}.`,
@@ -173,17 +190,15 @@ function findRowsWithSourceJobIds(
   return rowsWithSourceJobIds;
 }
 
-async function buildVouchersBulkJobBodyFromSourceJob({
+async function getVouchersBulkSourceJob({
   omioConfig,
   token,
   sourceJobId,
-  batchSize,
 }: {
   omioConfig: OmioVoucherApiConfig;
   token: OmioAccessToken;
   sourceJobId: string;
-  batchSize: number;
-}): Promise<OmioVouchersBulkJobBody> {
+}): Promise<Awaited<ReturnType<typeof getOmioVouchersBulkJob>>> {
   const sourceJob = await getOmioVouchersBulkJob({
     baseUrl: omioConfig.baseUrl,
     accessToken: token.accessToken,
@@ -193,7 +208,7 @@ async function buildVouchersBulkJobBodyFromSourceJob({
   expect(sourceJob.status).toBeGreaterThanOrEqual(200);
   expect(sourceJob.status).toBeLessThan(300);
 
-  return buildOmioVouchersBulkJobBodyFromExistingJob(sourceJob.body, batchSize);
+  return sourceJob;
 }
 
 async function createCompletedVouchersBulkJobAndDownload({
@@ -312,28 +327,22 @@ async function downloadVouchersForJob({
 async function uploadDownloadedVouchersToBrazePromotionCodeList({
   page,
   brazeConfig,
-  minCodesThreshold,
   targetDisplayName,
   filePath,
 }: {
   page: Page;
   brazeConfig: BrazeLoginConfig;
-  minCodesThreshold: number;
   targetDisplayName: ActiveVoucherRow['displayName'];
   filePath: string;
 }): Promise<void> {
-  const uploadResult = await uploadCsvToActiveVoucherRowBelowThresholdFromBraze(
-    page,
-    {
-      vouchersUrl: brazeConfig.vouchersUrl,
-      minCodesThreshold,
-      filePath,
-      targetDisplayName,
-      navigationTimeoutMs: brazeConfig.navigationTimeoutMs,
-      tableTimeoutMs: brazeConfig.navigationTimeoutMs,
-      log: console.log,
-    },
-  );
+  const uploadResult = await uploadCsvToActiveVoucherRowFromBraze(page, {
+    vouchersUrl: brazeConfig.vouchersUrl,
+    filePath,
+    targetDisplayName,
+    navigationTimeoutMs: brazeConfig.navigationTimeoutMs,
+    tableTimeoutMs: brazeConfig.navigationTimeoutMs,
+    log: console.log,
+  });
 
   expect(uploadResult.filePath).toBe(filePath);
   expect(uploadResult.displayName).toBe(targetDisplayName);

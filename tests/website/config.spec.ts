@@ -192,12 +192,12 @@ test('loads Omio vouchers bulk create inputs', () => {
   expect(
     loadOmioVouchersBulkCreateInputs({
       JOB_ID: '97e114cb-362c-4261-b331-20d0ed16d98a',
-      TARGET_BATCH_SIZE: '25',
+      TARGET_BATCH_SIZE: '250001',
       CAMPAIGN_NAME: '20260622_campaign',
     }),
   ).toEqual({
     sourceJobId: '97e114cb-362c-4261-b331-20d0ed16d98a',
-    targetBatchSize: 25,
+    targetBatchSize: 250001,
     campaignName: '20260622_campaign',
     promotionCodeListName:
       '20260622_campaign_jobId_97e114cb-362c-4261-b331-20d0ed16d98a',
@@ -226,7 +226,7 @@ test('requires Omio vouchers bulk create inputs', () => {
   ).toThrow('Missing required environment variable: CAMPAIGN_NAME');
 });
 
-test('requires the target batch size to fit the vouchers bulk API bounds', () => {
+test('requires the target batch size to be a positive integer', () => {
   expect(() =>
     loadOmioVouchersBulkCreateInputs({
       JOB_ID: '97e114cb-362c-4261-b331-20d0ed16d98a',
@@ -234,13 +234,6 @@ test('requires the target batch size to fit the vouchers bulk API bounds', () =>
       CAMPAIGN_NAME: '20260622_campaign',
     }),
   ).toThrow('TARGET_BATCH_SIZE must be a positive integer');
-  expect(() =>
-    loadOmioVouchersBulkCreateInputs({
-      JOB_ID: '97e114cb-362c-4261-b331-20d0ed16d98a',
-      TARGET_BATCH_SIZE: '100001',
-      CAMPAIGN_NAME: '20260622_campaign',
-    }),
-  ).toThrow('TARGET_BATCH_SIZE must be less than or equal to 100000');
 });
 
 test('builds the Omio QA vouchers base URL', () => {

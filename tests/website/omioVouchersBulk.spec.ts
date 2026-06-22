@@ -10,6 +10,7 @@ import {
   downloadOmioVouchersBulkJobVouchers,
   getOmioVouchersBulkJob,
   readOmioVouchersBulkJobId,
+  splitOmioVouchersBulkBatchSize,
   waitForOmioVouchersBulkJobCompletion,
 } from '../../src/api/omioVouchersBulk';
 
@@ -117,6 +118,27 @@ test('builds a vouchers bulk job body from an existing source job', () => {
   });
 });
 
+test('splits large vouchers bulk batch sizes into backend-sized chunks', () => {
+  expect(splitOmioVouchersBulkBatchSize(25)).toEqual([25]);
+  expect(splitOmioVouchersBulkBatchSize(100_000)).toEqual([100_000]);
+  expect(splitOmioVouchersBulkBatchSize(250_001)).toEqual([
+    100_000,
+    100_000,
+    50_001,
+  ]);
+  expect(splitOmioVouchersBulkBatchSize(300_000)).toEqual([
+    100_000,
+    100_000,
+    100_000,
+  ]);
+});
+
+test('fails clearly when a vouchers bulk batch size cannot be split', () => {
+  expect(() => splitOmioVouchersBulkBatchSize(0)).toThrow(
+    'Omio vouchers bulk batch size must be a positive integer',
+  );
+});
+
 test('fails clearly when the source job batch size override is invalid', () => {
   expect(() =>
     buildOmioVouchersBulkJobBodyFromExistingJob(
@@ -127,6 +149,20 @@ test('fails clearly when the source job batch size override is invalid', () => {
       0,
     ),
   ).toThrow('REPLENISH_BATCH_SIZE must be a positive integer');
+});
+
+test('fails clearly when one Omio vouchers bulk job body exceeds the backend batch size limit', () => {
+  expect(() =>
+    buildOmioVouchersBulkJobBodyFromExistingJob(
+      {
+        uppercaseIds: false,
+        template: RELATIVE_VOUCHERS_BULK_BODY.template,
+      },
+      100_001,
+    ),
+  ).toThrow(
+    'Omio vouchers bulk job batchSize must be less than or equal to 100000',
+  );
 });
 
 test('fails clearly when the source job response is invalid', () => {

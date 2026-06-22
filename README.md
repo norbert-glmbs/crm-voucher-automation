@@ -43,6 +43,8 @@ ENV=QA
 These values can live in a local `.env` file in the project root. The automation
 loads `.env` automatically, and variables already set in your shell override
 values from the file.
+Before running a live command, review `.env.example` and create your own local
+`.env` file from that example configuration. Do not commit `.env`.
 
 `ENV=QA` uses Braze environment `592d2af81b0e4d67991edb6b`.
 `ENV=PROD` uses Braze environment `577e3b2a56ec312e6058236f`.
@@ -71,6 +73,11 @@ TARGET_BATCH_SIZE=25
 CAMPAIGN_NAME=20260622_campaign
 ```
 
+The Omio vouchers bulk backend accepts at most `100000` vouchers per request.
+If `REPLENISH_BATCH_SIZE` or `TARGET_BATCH_SIZE` is larger than `100000`, the
+automation splits the requested total into multiple Omio jobs and uploads each
+generated CSV to the same Braze Promotion Code list.
+
 `yarn omio:vouchers-bulk-replenish` logs into Braze first and prints the ACTIVE
 Promotion Code lists below `MIN_CODES_THRESHOLD`. If none are below the
 threshold, it exits without creating an Omio job.
@@ -84,8 +91,9 @@ bulk job id in this format:
 
 The command fetches that source job with `GET private/v3/jobs/vouchers-bulk/{jobId}`,
 reuses its `uppercaseIds` and `template`, overrides only `batchSize`, creates a
-new vouchers bulk job, approves it, waits for completion, downloads the CSV, and
-uploads it back to the matching Braze Promotion Code list.
+new vouchers bulk job for each required chunk, approves each job, waits for
+completion, downloads each CSV, and uploads it back to the matching Braze
+Promotion Code list.
 Low lists whose display name does not include a matching `jobId` are logged and
 skipped.
 
@@ -96,8 +104,8 @@ then opens the new Promotion Code List form through the
 `{CAMPAIGN_NAME}_jobId_{JOB_ID}` and `Code Snippet Name` with `CAMPAIGN_NAME`.
 It then fetches `GET private/v3/jobs/vouchers-bulk/{JOB_ID}`, reuses the source
 job's `uppercaseIds` and `template`, overrides only `batchSize` with
-`TARGET_BATCH_SIZE`, creates and approves a new Omio vouchers bulk job, waits for
-completion, downloads the CSV, strips a leading `voucher_code` header if present,
-and uploads the file into the new Braze Promotion Code list.
+each required chunk, creates and approves each Omio vouchers bulk job, waits for
+completion, downloads each CSV, strips a leading `voucher_code` header if
+present, and uploads the files into the new Braze Promotion Code list.
 
 Add new live automation steps as Playwright specs under `tests/manual`.

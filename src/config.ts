@@ -34,7 +34,6 @@ const DEFAULT_BRAZE_DASHBOARD_ORIGIN = 'https://dashboard-01.braze.com';
 const DEFAULT_AUTH_STATE_PATH = '.playwright/.auth/braze.json';
 const DEFAULT_MFA_TIMEOUT_MS = 120_000;
 const DEFAULT_NAVIGATION_TIMEOUT_MS = 30_000;
-const MAX_VOUCHERS_BULK_BATCH_SIZE = 100_000;
 const BRAZE_ENV_IDS: Record<OmioEnv, string> = {
   QA: '592d2af81b0e4d67991edb6b',
   PROD: '577e3b2a56ec312e6058236f',
@@ -147,8 +146,9 @@ export function loadOmioVouchersBulkCreateInputs(
 ): OmioVouchersBulkCreateInputs {
   const sourceJobId = requireNonEmptyEnv(env, 'JOB_ID');
   const campaignName = requireNonEmptyEnv(env, 'CAMPAIGN_NAME');
-  const targetBatchSize = parseVouchersBulkBatchSize(
+  const targetBatchSize = parsePositiveInteger(
     requireEnv(env, 'TARGET_BATCH_SIZE'),
+    0,
     'TARGET_BATCH_SIZE',
   );
 
@@ -303,18 +303,6 @@ function parsePositiveInteger(
 
   if (!Number.isInteger(parsed) || parsed <= 0) {
     throw new Error(`${envKey} must be a positive integer`);
-  }
-
-  return parsed;
-}
-
-function parseVouchersBulkBatchSize(value: string, envKey: string): number {
-  const parsed = parsePositiveInteger(value, 0, envKey);
-
-  if (parsed > MAX_VOUCHERS_BULK_BATCH_SIZE) {
-    throw new Error(
-      `${envKey} must be less than or equal to ${MAX_VOUCHERS_BULK_BATCH_SIZE}`,
-    );
   }
 
   return parsed;

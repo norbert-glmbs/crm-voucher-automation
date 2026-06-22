@@ -40,6 +40,11 @@ type UploadVoucherCsvOptions = PrintVoucherRowsBelowThresholdOptions & {
   targetDisplayName?: string;
 };
 
+type UploadActiveVoucherRowCsvOptions = PrintActiveVoucherRowsOptions & {
+  filePath: string;
+  targetDisplayName: string;
+};
+
 type OpenNewPromotionCodeListOptions = {
   vouchersUrl: string;
   newVoucherUrl: string;
@@ -132,6 +137,44 @@ export async function uploadCsvToActiveVoucherRowBelowThresholdFromBraze(
 
     throw new Error(
       `No ACTIVE Promotion Codes below MIN_CODES_THRESHOLD[${options.minCodesThreshold}] were available for CSV upload.`,
+    );
+  }
+
+  options.log?.(`Opening Braze Promotion Code list ${rowToUpdate.displayName}`);
+  await openVoucherTableRowByDisplayName(
+    page,
+    rowToUpdate.displayName,
+    options.tableTimeoutMs ?? DEFAULT_TABLE_TIMEOUT_MS,
+  );
+
+  const uploadedFilePath = await prepareCsvForBrazeUpload(options.filePath);
+
+  options.log?.(`Uploading CSV ${uploadedFilePath}`);
+  await uploadCsvToOpenVoucherList(page, uploadedFilePath);
+
+  options.log?.(`Uploaded CSV to Braze Promotion Code list ${rowToUpdate.displayName}`);
+
+  return {
+    ...rowToUpdate,
+    filePath: options.filePath,
+    uploadedFilePath,
+  };
+}
+
+export async function uploadCsvToActiveVoucherRowFromBraze(
+  page: Page,
+  options: UploadActiveVoucherRowCsvOptions,
+): Promise<UploadVoucherCsvResult> {
+  await goToBrazeVouchersPage(page, options.vouchersUrl, options.navigationTimeoutMs);
+
+  const activeRows = await readActiveVoucherRows(page, options.tableTimeoutMs);
+  const rowToUpdate = activeRows.find(
+    (row) => row.displayName === options.targetDisplayName,
+  );
+
+  if (!rowToUpdate) {
+    throw new Error(
+      `ACTIVE Promotion Code "${options.targetDisplayName}" was not found and cannot be selected for CSV upload.`,
     );
   }
 

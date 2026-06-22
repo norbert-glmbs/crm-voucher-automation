@@ -32,6 +32,7 @@ The implementation now lives in the existing root Playwright project, not in a n
 - [x] Open the Braze new Promotion Code List form with the `Create Promotion Code List` button or `/integrations/vouchers/new/{envId}` fallback URL.
 - [x] Fill new Braze Promotion Code list `Name` with `{CAMPAIGN_NAME}_jobId_{JOB_ID}` and `Code Snippet Name` with `CAMPAIGN_NAME`.
 - [x] Use `TARGET_BATCH_SIZE` as the batch size override for one-off create jobs.
+- [x] Split `REPLENISH_BATCH_SIZE` and `TARGET_BATCH_SIZE` values over `100000` into multiple Omio jobs because the backend limit is `100000` vouchers per request.
 - [x] Create Omio vouchers bulk jobs through `POST private/v3/jobs/vouchers-bulk`.
 - [x] Approve Omio vouchers bulk jobs through `PATCH private/v3/jobs/vouchers-bulk/{jobId}`.
 - [x] Poll Omio vouchers bulk job status until `COMPLETED`.

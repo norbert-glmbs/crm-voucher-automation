@@ -88,6 +88,7 @@ const COMPLETED_JOB_STATUS = 'COMPLETED';
 const DEFAULT_COMPLETION_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_DOWNLOAD_MAX_ATTEMPTS = 3;
 const DEFAULT_DOWNLOAD_RETRY_DELAY_MS = 5_000;
+export const MAX_OMIO_VOUCHERS_BULK_BATCH_SIZE = 100_000;
 
 export async function createOmioVouchersBulkJob(
   config: OmioVouchersBulkJobConfig,
@@ -254,12 +255,39 @@ export function readOmioVouchersBulkJobId(body: unknown): string {
   throw new Error('Omio vouchers bulk job response did not include jobId');
 }
 
+export function splitOmioVouchersBulkBatchSize(batchSize: number): number[] {
+  if (!Number.isInteger(batchSize) || batchSize <= 0) {
+    throw new Error('Omio vouchers bulk batch size must be a positive integer');
+  }
+
+  const chunks: number[] = [];
+  let remainingBatchSize = batchSize;
+
+  while (remainingBatchSize > 0) {
+    const chunkSize = Math.min(
+      remainingBatchSize,
+      MAX_OMIO_VOUCHERS_BULK_BATCH_SIZE,
+    );
+
+    chunks.push(chunkSize);
+    remainingBatchSize -= chunkSize;
+  }
+
+  return chunks;
+}
+
 export function buildOmioVouchersBulkJobBodyFromExistingJob(
   sourceJob: unknown,
   batchSize: number,
 ): OmioVouchersBulkJobBody {
   if (!Number.isInteger(batchSize) || batchSize <= 0) {
     throw new Error('REPLENISH_BATCH_SIZE must be a positive integer');
+  }
+
+  if (batchSize > MAX_OMIO_VOUCHERS_BULK_BATCH_SIZE) {
+    throw new Error(
+      `Omio vouchers bulk job batchSize must be less than or equal to ${MAX_OMIO_VOUCHERS_BULK_BATCH_SIZE}`,
+    );
   }
 
   if (!isRecord(sourceJob)) {
