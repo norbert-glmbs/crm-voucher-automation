@@ -65,5 +65,7 @@ The command fetches that source job with `GET private/v3/jobs/vouchers-bulk/{job
 reuses its `uppercaseIds` and `template`, overrides only `batchSize`, creates a
 new vouchers bulk job, approves it, waits for completion, downloads the CSV, and
 uploads it back to the matching Braze Promotion Code list.
+Low lists whose display name does not include a matching `jobId` are logged and
+skipped.
 
 Add new live automation steps as Playwright specs under `tests/manual`.

@@ -30,7 +30,7 @@ const BRAZE_ENV_IDS: Record<OmioEnv, string> = {
   PROD: '577e3b2a56ec312e6058236f',
 };
 const OMIO_VOUCHER_BASE_URLS: Record<OmioEnv, string> = {
-  QA: 'https://www.omio.com.qa.goeuro.ninja/vouchers',
+  QA: 'http://localhost:8080/vouchers',
   PROD: 'https://www.omio.com/vouchers',
 };
 

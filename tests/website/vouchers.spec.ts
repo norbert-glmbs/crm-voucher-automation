@@ -4,6 +4,7 @@ import {
   extractOmioVouchersBulkJobIdFromDisplayName,
   filterActiveVoucherRowsBelowThreshold,
   formatActiveVoucherRow,
+  findOmioVouchersBulkJobIdFromDisplayName,
   parseVoucherCount,
   printActiveVoucherRowsBelowThreshold,
   readActiveVoucherRows,
@@ -192,6 +193,10 @@ test('extracts an Omio vouchers bulk job id from a Braze display name', () => {
       'prefix_jobId_97e114cb-362c-4261-b331-20d0ed16d98a_suffix',
     ),
   ).toBe('97e114cb-362c-4261-b331-20d0ed16d98a');
+});
+
+test('finds no Omio vouchers bulk job id when a Braze display name does not include one', () => {
+  expect(findOmioVouchersBulkJobIdFromDisplayName('norbert_test_2')).toBeNull();
 });
 
 test('fails clearly when a Braze display name has no Omio vouchers bulk job id', () => {

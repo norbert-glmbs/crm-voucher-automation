@@ -34,6 +34,7 @@ Audit scope: current repository code and visible working-tree changes. The root-
 - [x] Removed `config/vouchers-bulk-job.json` from the replenishment flow.
 - [x] Added `REPLENISH_BATCH_SIZE` as the per-run vouchers bulk batch size input.
 - [x] Added source-job extraction from Braze Promotion Code display names using the `..._jobId_{jobId}_...` naming convention.
+- [x] Added skip handling for low Braze Promotion Code lists whose display name does not contain a source job id.
 - [x] Added source-job fetch for `GET private/v3/jobs/vouchers-bulk/{jobId}` and creation-body derivation from the source job's `uppercaseIds` and `template`.
 - [x] Added Omio vouchers bulk job creation support for `POST private/v3/jobs/vouchers-bulk`.
 - [x] Added Omio vouchers bulk job approval support for `PATCH private/v3/jobs/vouchers-bulk/{jobId}`.

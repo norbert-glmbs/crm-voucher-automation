@@ -20,7 +20,7 @@ import {
 } from '../../src/config';
 import { isAtTargetDestination, loginToBraze } from '../../src/website/auth';
 import {
-  extractOmioVouchersBulkJobIdFromDisplayName,
+  findOmioVouchersBulkJobIdFromDisplayName,
   printActiveVoucherRowsBelowThresholdFromBraze,
   type ActiveVoucherRow,
   uploadCsvToActiveVoucherRowBelowThresholdFromBraze,
@@ -30,6 +30,10 @@ import {
   manualSkipMessage,
   shouldRunManualSpec,
 } from './support/manualFlow';
+
+type ActiveVoucherRowWithSourceJobId = ActiveVoucherRow & {
+  sourceJobId: string;
+};
 
 test.skip(
   !shouldRunManualSpec('RUN_OMIO_VOUCHERS_BULK_REPLENISH'),
@@ -86,22 +90,31 @@ test(
         `Found ${rowsBelowThreshold.length} Braze Promotion Code list(s) below MIN_CODES_THRESHOLD[${minCodesThreshold}].`,
       );
 
+      const rowsWithSourceJobIds = findRowsWithSourceJobIds(
+        rowsBelowThreshold,
+        console.log,
+      );
+
+      if (rowsWithSourceJobIds.length === 0) {
+        console.log(
+          'No low Braze Promotion Code lists included a source Omio vouchers bulk job id; no Omio vouchers bulk jobs will be created.',
+        );
+        return;
+      }
+
       const omioConfig = loadOmioVoucherApiConfig();
       const token = await requestOmioAccessToken(omioConfig);
 
-      for (const row of rowsBelowThreshold) {
-        const sourceJobId = extractOmioVouchersBulkJobIdFromDisplayName(
-          row.displayName,
-        );
+      for (const row of rowsWithSourceJobIds) {
         const body = await buildVouchersBulkJobBodyFromSourceJob({
           omioConfig,
           token,
-          sourceJobId,
+          sourceJobId: row.sourceJobId,
           batchSize,
         });
 
         console.log(
-          `Creating Omio vouchers bulk job for Braze Promotion Code list ${row.displayName} from source job ${sourceJobId} with batchSize ${batchSize}.`,
+          `Creating Omio vouchers bulk job for Braze Promotion Code list ${row.displayName} from source job ${row.sourceJobId} with batchSize ${batchSize}.`,
         );
 
         const csvPath = await createCompletedVouchersBulkJobAndDownload({
@@ -132,6 +145,33 @@ test(
     }
   },
 );
+
+function findRowsWithSourceJobIds(
+  rows: ActiveVoucherRow[],
+  log: (message: string) => void,
+): ActiveVoucherRowWithSourceJobId[] {
+  const rowsWithSourceJobIds: ActiveVoucherRowWithSourceJobId[] = [];
+
+  for (const row of rows) {
+    const sourceJobId = findOmioVouchersBulkJobIdFromDisplayName(
+      row.displayName,
+    );
+
+    if (!sourceJobId) {
+      log(
+        `Skipping Braze Promotion Code list ${row.displayName}: display name does not contain a source Omio vouchers bulk job id in the ..._jobId_{jobId}_... format.`,
+      );
+      continue;
+    }
+
+    rowsWithSourceJobIds.push({
+      ...row,
+      sourceJobId,
+    });
+  }
+
+  return rowsWithSourceJobIds;
+}
 
 async function buildVouchersBulkJobBodyFromSourceJob({
   omioConfig,

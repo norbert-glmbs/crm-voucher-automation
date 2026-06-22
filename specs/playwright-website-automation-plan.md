@@ -25,6 +25,7 @@ The implementation now lives in the existing root Playwright project, not in a n
 - [x] Stop without creating Omio jobs when no Braze list is below the threshold.
 - [x] Request an Omio access token with client-credentials Basic auth.
 - [x] Extract a source Omio vouchers bulk job id from each low Braze Promotion Code display name using the `..._jobId_{jobId}_...` naming convention.
+- [x] Skip low Braze Promotion Code lists whose display name does not contain a source Omio vouchers bulk job id.
 - [x] Fetch the source Omio vouchers bulk job and derive the new POST body from its `uppercaseIds` and `template`.
 - [x] Use `REPLENISH_BATCH_SIZE` as the per-run batch size override for replenishment jobs.
 - [x] Create Omio vouchers bulk jobs through `POST private/v3/jobs/vouchers-bulk`.

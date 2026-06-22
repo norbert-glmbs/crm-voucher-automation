@@ -214,15 +214,23 @@ export function parseVoucherCount(value: string, fieldName = 'voucher count'): n
 export function extractOmioVouchersBulkJobIdFromDisplayName(
   displayName: string,
 ): string {
-  const match = displayName.match(OMIO_VOUCHERS_BULK_JOB_ID_PATTERN);
+  const jobId = findOmioVouchersBulkJobIdFromDisplayName(displayName);
 
-  if (!match) {
+  if (!jobId) {
     throw new Error(
       `Unable to extract Omio vouchers bulk jobId from Braze Promotion Code display name: ${displayName}`,
     );
   }
 
-  return match[1];
+  return jobId;
+}
+
+export function findOmioVouchersBulkJobIdFromDisplayName(
+  displayName: string,
+): string | null {
+  const match = displayName.match(OMIO_VOUCHERS_BULK_JOB_ID_PATTERN);
+
+  return match?.[1] ?? null;
 }
 
 async function readVoucherTableModel(
