@@ -98,6 +98,215 @@ test('reads active voucher rows from an ARIA grid', async ({ page }) => {
   ]);
 });
 
+test('reads active voucher rows from the Braze data grid table', async ({ page }) => {
+  await page.setContent(`
+    <main>
+      <div id="integrations-voucher-groups-api-data-table">
+        <h4 class="bcl-table-results-section">7 Results</h4>
+        <table class="data-grid" role="grid">
+          <thead>
+            <tr>
+              <th style="width: 20px;"><input type="checkbox"></th>
+              <th><button type="button">Display Name</button></th>
+              <th><button type="button">Code Snippet</button></th>
+              <th>Status</th>
+              <th><button type="button">Remaining</button></th>
+              <th><button type="button">Total</button></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td>
+                <a href="/integrations/vouchers/6a38e1882572a9009e3b7be0/592d2af81b0e4d67991edb6b?locale=en">
+                  20260622_campaign_jobId_97e114cb-362c-4261-b331-20d0ed16d98a
+                </a>
+              </td>
+              <td>20260622_campaign</td>
+              <td><div><div><div>Active</div></div></div></td>
+              <td style="text-align: right;">55</td>
+              <td style="text-align: right;">55</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td>
+                <a href="/integrations/vouchers/6a392c820cb2ff0083a4b40f/592d2af81b0e4d67991edb6b?locale=en">
+                  20260622_campaign_v6_jobId_72291392-bfa1-4285-9806-9d1d2d51b662
+                </a>
+              </td>
+              <td>20260622_campaign_v6</td>
+              <td><div><div><div>Active</div></div></div></td>
+              <td style="text-align: right;">10</td>
+              <td style="text-align: right;">10</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  `);
+
+  await expect(readActiveVoucherRows(page, 1_000)).resolves.toEqual([
+    {
+      displayName: '20260622_campaign_jobId_97e114cb-362c-4261-b331-20d0ed16d98a',
+      remaining: '55',
+      total: '55',
+    },
+    {
+      displayName: '20260622_campaign_v6_jobId_72291392-bfa1-4285-9806-9d1d2d51b662',
+      remaining: '10',
+      total: '10',
+    },
+  ]);
+});
+
+test('waits for Braze data grid body rows after headers render', async ({ page }) => {
+  await page.setContent(`
+    <main>
+      <table class="data-grid" role="grid">
+        <thead>
+          <tr>
+            <th></th>
+            <th><button type="button">Display Name</button></th>
+            <th><button type="button">Code Snippet</button></th>
+            <th>Status</th>
+            <th><button type="button">Remaining</button></th>
+            <th><button type="button">Total</button></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <script>
+        setTimeout(() => {
+          document.querySelector('tbody').innerHTML =
+            '<tr>' +
+              '<td><input type="checkbox"></td>' +
+              '<td><a href="/integrations/vouchers/6a392c820cb2ff0083a4b40f/592d2af81b0e4d67991edb6b?locale=en">Delayed Reward</a></td>' +
+              '<td>delayed_reward</td>' +
+              '<td><div><div>Active</div></div></td>' +
+              '<td>8</td>' +
+              '<td>10</td>' +
+            '</tr>';
+        }, 300);
+      </script>
+    </main>
+  `);
+
+  await expect(readActiveVoucherRows(page, 2_000)).resolves.toEqual([
+    {
+      displayName: 'Delayed Reward',
+      remaining: '8',
+      total: '10',
+    },
+  ]);
+});
+
+test('reads active voucher rows across Braze paginated table pages', async ({
+  page,
+}) => {
+  await page.setContent(`
+    <main>
+      <table class="data-grid" role="grid">
+        <thead>
+          <tr>
+            <th></th>
+            <th><button type="button">Display Name</button></th>
+            <th><button type="button">Code Snippet</button></th>
+            <th>Status</th>
+            <th><button type="button">Remaining</button></th>
+            <th><button type="button">Total</button></th>
+          </tr>
+        </thead>
+        <tbody id="voucher-rows"></tbody>
+      </table>
+      <div class="bcl-pagination-footer">
+        <span class="pagination-footer-properties__showing-text">
+          <span id="showing-rows"></span>
+        </span>
+        <nav>
+          <button id="previous-page" type="button" aria-label="Previous page">Previous</button>
+          <button id="current-page" type="button" aria-current="page" aria-label="Current Page, Page 1">1</button>
+          <button id="next-page" type="button" aria-label="Next page">Next</button>
+        </nav>
+      </div>
+      <script>
+        const pages = [
+          [
+            ['Page One Reward', 'page_one', 'Active', '75', '100'],
+            ['Paused Reward', 'paused', 'Inactive', '1', '10'],
+          ],
+          [
+            ['Page Two Reward', 'page_two', 'Active', '8', '10'],
+          ],
+        ];
+        let currentPageIndex = 0;
+
+        function renderPage() {
+          document.getElementById('voucher-rows').innerHTML = pages[currentPageIndex]
+            .map((row, rowIndex) =>
+              '<tr>' +
+                '<td><input type="checkbox"></td>' +
+                '<td><a href="/integrations/vouchers/' + currentPageIndex + '-' + rowIndex + '">' + row[0] + '</a></td>' +
+                '<td>' + row[1] + '</td>' +
+                '<td><div><div>' + row[2] + '</div></div></td>' +
+                '<td>' + row[3] + '</td>' +
+                '<td>' + row[4] + '</td>' +
+              '</tr>',
+            )
+            .join('');
+          const startRow = currentPageIndex + 1;
+          document.getElementById('showing-rows').textContent =
+            'Showing rows ' + startRow + ' - ' + startRow + ' of 2';
+          document.getElementById('current-page').textContent = String(currentPageIndex + 1);
+          document
+            .getElementById('current-page')
+            .setAttribute('aria-label', 'Current Page, Page ' + (currentPageIndex + 1));
+          document
+            .getElementById('previous-page')
+            .setAttribute('aria-disabled', String(currentPageIndex === 0));
+          document
+            .getElementById('previous-page')
+            .setAttribute('data-style', currentPageIndex === 0 ? 'disabled' : 'default');
+          document
+            .getElementById('next-page')
+            .setAttribute('aria-disabled', String(currentPageIndex === pages.length - 1));
+          document
+            .getElementById('next-page')
+            .setAttribute('data-style', currentPageIndex === pages.length - 1 ? 'disabled' : 'default');
+        }
+
+        document.getElementById('previous-page').addEventListener('click', () => {
+          if (currentPageIndex > 0) {
+            currentPageIndex -= 1;
+            renderPage();
+          }
+        });
+        document.getElementById('next-page').addEventListener('click', () => {
+          if (currentPageIndex < pages.length - 1) {
+            currentPageIndex += 1;
+            renderPage();
+          }
+        });
+
+        renderPage();
+      </script>
+    </main>
+  `);
+
+  await expect(readActiveVoucherRows(page, 2_000)).resolves.toEqual([
+    {
+      displayName: 'Page One Reward',
+      remaining: '75',
+      total: '100',
+    },
+    {
+      displayName: 'Page Two Reward',
+      remaining: '8',
+      total: '10',
+    },
+  ]);
+  await expect(page.locator('#current-page')).toHaveText('1');
+});
+
 test('formats one active voucher row', () => {
   expect(
     formatActiveVoucherRow({
@@ -389,6 +598,151 @@ test('uploads a CSV to an open new promotion code list', async ({ page }, testIn
   await expect(readFile(result.uploadedFilePath, 'utf8')).resolves.toBe('NEW123\n');
 });
 
+test('uploads a CSV through the Braze hidden file selector', async ({
+  page,
+}, testInfo) => {
+  const csvPath = testInfo.outputPath('braze-hidden-input-vouchers.csv');
+  await writeFile(csvPath, 'voucher_code\nHIDDEN123\n', 'utf8');
+  await page.setContent(`
+    <main>
+      <form class="db-voucher-editor">
+        <fieldset>
+          <legend>
+            <h4>Import Promotion Codes</h4>
+          </legend>
+          <div class="db-file-selector">
+            <div role="presentation" tabindex="0" class="db-file-selector-dropzone">
+              <input
+                accept="text/*,.csv,.txt,application/vnd.ms-excel,.csv,.txt"
+                type="file"
+                tabindex="-1"
+                class="db-file-selector-input"
+                id="db-voucher-editor-promo-code-file-selector"
+                style="display: none;"
+              >
+              <span class="db-file-selector-call-to-action">Upload CSV</span>
+              <button type="button">
+                <span>Upload CSV</span>
+              </button>
+            </div>
+          </div>
+        </fieldset>
+        <button id="start-upload" type="button" hidden>Start Upload</button>
+        <button id="update-list" type="button" disabled>Update List</button>
+        <div id="uploaded-file"></div>
+      </form>
+      <script>
+        document
+          .getElementById('db-voucher-editor-promo-code-file-selector')
+          .addEventListener('change', function () {
+            document.getElementById('start-upload').hidden = false;
+          });
+        document.getElementById('start-upload').addEventListener('click', async function () {
+          const file = document.getElementById('db-voucher-editor-promo-code-file-selector').files[0];
+          document.getElementById('update-list').disabled = false;
+          window.uploadedCsvContent = file ? await file.text() : 'missing';
+        });
+        document.getElementById('update-list').addEventListener('click', function () {
+          document.getElementById('uploaded-file').textContent = window.uploadedCsvContent || 'missing';
+        });
+      </script>
+    </main>
+  `);
+
+  const result = await uploadCsvToOpenPromotionCodeListFromBraze(page, {
+    filePath: csvPath,
+    displayName: '20260622_campaign',
+  });
+
+  expect(result).toEqual({
+    filePath: csvPath,
+    uploadedFilePath: csvPath.replace('.csv', '.braze-upload.csv'),
+    displayName: '20260622_campaign',
+  });
+  await expect(page.locator('#uploaded-file')).toHaveText('HIDDEN123\n');
+  await expect(readFile(result.uploadedFilePath, 'utf8')).resolves.toBe(
+    'HIDDEN123\n',
+  );
+});
+
+test('clicks the Start Upload button in the Braze preview modal', async ({
+  page,
+}, testInfo) => {
+  const csvPath = testInfo.outputPath('braze-preview-modal-vouchers.csv');
+  await writeFile(csvPath, 'voucher_code\nMODAL123\n', 'utf8');
+  await page.setContent(`
+    <main>
+      <form class="db-voucher-editor">
+        <div class="db-file-selector">
+          <div role="presentation" tabindex="0" class="db-file-selector-dropzone">
+            <input
+              accept="text/*,.csv,.txt,application/vnd.ms-excel,.csv,.txt"
+              type="file"
+              class="db-file-selector-input"
+              id="db-voucher-editor-promo-code-file-selector"
+              style="display: none;"
+            >
+            <span class="db-file-selector-call-to-action">Upload CSV</span>
+            <button type="button">
+              <span>Upload CSV</span>
+            </button>
+          </div>
+        </div>
+        <button id="update-list" type="button" disabled>Update List</button>
+        <div id="modal-root"></div>
+        <div id="uploaded-file"></div>
+      </form>
+      <script>
+        window.startUploadClicks = 0;
+
+        document
+          .getElementById('db-voucher-editor-promo-code-file-selector')
+          .addEventListener('change', function () {
+            document.getElementById('modal-root').innerHTML =
+              '<div role="dialog" class="bcl-modal-dialog">' +
+                '<div class="bcl-modal-content">' +
+                  '<div class="bcl-modal-body">' +
+                    '<span>If everything below looks correct, select Start Upload. Once started, upload cannot be canceled.</span>' +
+                  '</div>' +
+                  '<div class="bcl-modal-footer">' +
+                    '<button id="cancel-upload" type="button">Cancel</button>' +
+                    '<button id="start-upload" type="button">Start Upload</button>' +
+                  '</div>' +
+                '</div>' +
+              '</div>';
+
+            document.getElementById('start-upload').addEventListener('click', async function () {
+              const file = document.getElementById('db-voucher-editor-promo-code-file-selector').files[0];
+              window.startUploadClicks += 1;
+              document.getElementById('update-list').disabled = false;
+              document.getElementById('modal-root').innerHTML = '';
+              window.uploadedCsvContent = file ? await file.text() : 'missing';
+            });
+          });
+
+        document.getElementById('update-list').addEventListener('click', function () {
+          document.getElementById('uploaded-file').textContent = window.uploadedCsvContent || 'missing';
+        });
+      </script>
+    </main>
+  `);
+
+  await uploadCsvToOpenPromotionCodeListFromBraze(page, {
+    filePath: csvPath,
+    displayName: '20260622_campaign',
+  });
+
+  await expect(page.locator('#uploaded-file')).toHaveText('MODAL123\n');
+  await expect(page.locator('#modal-root')).toBeEmpty();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as Window & { startUploadClicks: number }).startUploadClicks,
+      ),
+    )
+    .toBe(1);
+});
+
 test('uploads a CSV to the first active voucher row below threshold', async ({
   page,
 }, testInfo) => {
@@ -572,6 +926,148 @@ test('uploads a CSV to the requested active voucher row below threshold', async 
   await expect(readFile(result.uploadedFilePath, 'utf8')).resolves.toBe(
     'TARGET123\n',
   );
+});
+
+test('uploads a CSV to a requested active voucher row on a later page', async ({
+  page,
+}, testInfo) => {
+  const csvPath = testInfo.outputPath('paginated-targeted-vouchers.csv');
+  await writeFile(csvPath, 'voucher_code\nPAGE2\n', 'utf8');
+  await page.route('https://braze.example/vouchers', async (route) => {
+    await route.fulfill({
+      contentType: 'text/html',
+      body: `
+        <main>
+          <table class="data-grid" role="grid">
+            <thead>
+              <tr>
+                <th>Display Name</th>
+                <th>Status</th>
+                <th>Remaining</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody id="voucher-rows"></tbody>
+          </table>
+          <div class="bcl-pagination-footer">
+            <span class="pagination-footer-properties__showing-text">
+              <span id="showing-rows"></span>
+            </span>
+            <nav>
+              <button id="previous-page" type="button" aria-label="Previous page">Previous</button>
+              <button id="current-page" type="button" aria-current="page" aria-label="Current Page, Page 1">1</button>
+              <button id="next-page" type="button" aria-label="Next page">Next</button>
+            </nav>
+          </div>
+          <section id="details"></section>
+          <script>
+            const pages = [
+              [
+                ['High Balance', 'Active', '2,000', '5,000'],
+              ],
+              [
+                ['Later Page Reward', 'Active', '8', '10'],
+              ],
+            ];
+            let currentPageIndex = 0;
+
+            function renderPage() {
+              document.getElementById('voucher-rows').innerHTML = pages[currentPageIndex]
+                .map((row) =>
+                  '<tr>' +
+                    '<td><button type="button" onclick="openVoucherList(\\'' + row[0] + '\\')">' + row[0] + '</button></td>' +
+                    '<td>' + row[1] + '</td>' +
+                    '<td>' + row[2] + '</td>' +
+                    '<td>' + row[3] + '</td>' +
+                  '</tr>',
+                )
+                .join('');
+              const startRow = currentPageIndex + 1;
+              document.getElementById('showing-rows').textContent =
+                'Showing rows ' + startRow + ' - ' + startRow + ' of 2';
+              document.getElementById('current-page').textContent = String(currentPageIndex + 1);
+              document
+                .getElementById('current-page')
+                .setAttribute('aria-label', 'Current Page, Page ' + (currentPageIndex + 1));
+              document
+                .getElementById('previous-page')
+                .setAttribute('aria-disabled', String(currentPageIndex === 0));
+              document
+                .getElementById('previous-page')
+                .setAttribute('data-style', currentPageIndex === 0 ? 'disabled' : 'default');
+              document
+                .getElementById('next-page')
+                .setAttribute('aria-disabled', String(currentPageIndex === pages.length - 1));
+              document
+                .getElementById('next-page')
+                .setAttribute('data-style', currentPageIndex === pages.length - 1 ? 'disabled' : 'default');
+            }
+
+            function openVoucherList(name) {
+              document.getElementById('details').innerHTML =
+                '<h1 id="opened-name">' + name + '</h1>' +
+                '<button id="show-upload">Upload CSV</button>' +
+                '<div id="upload-controls" hidden>' +
+                  '<input id="voucher-file" type="file">' +
+                  '<button id="start-upload">Start Upload</button>' +
+                '</div>' +
+                '<button id="update-list" disabled>Update list</button>' +
+                '<div id="uploaded-file"></div>';
+              document.getElementById('show-upload').addEventListener('click', function () {
+                document.getElementById('upload-controls').hidden = false;
+              });
+              document.getElementById('start-upload').addEventListener('click', async function () {
+                const file = document.getElementById('voucher-file').files[0];
+                document.getElementById('update-list').disabled = false;
+                window.uploadedCsvContent = file ? await file.text() : 'missing';
+              });
+              document.getElementById('update-list').addEventListener('click', function () {
+                document.getElementById('uploaded-file').textContent = window.uploadedCsvContent || 'missing';
+              });
+            }
+
+            document.getElementById('previous-page').addEventListener('click', () => {
+              if (currentPageIndex > 0) {
+                currentPageIndex -= 1;
+                renderPage();
+              }
+            });
+            document.getElementById('next-page').addEventListener('click', () => {
+              if (currentPageIndex < pages.length - 1) {
+                currentPageIndex += 1;
+                renderPage();
+              }
+            });
+
+            renderPage();
+          </script>
+        </main>
+      `,
+    });
+  });
+
+  const result = await uploadCsvToActiveVoucherRowBelowThresholdFromBraze(
+    page,
+    {
+      vouchersUrl: 'https://braze.example/vouchers',
+      minCodesThreshold: 50,
+      filePath: csvPath,
+      targetDisplayName: 'Later Page Reward',
+      navigationTimeoutMs: 1_000,
+      tableTimeoutMs: 2_000,
+    },
+  );
+
+  expect(result).toEqual({
+    displayName: 'Later Page Reward',
+    remaining: '8',
+    total: '10',
+    filePath: csvPath,
+    uploadedFilePath: csvPath.replace('.csv', '.braze-upload.csv'),
+  });
+  await expect(page.locator('#opened-name')).toHaveText('Later Page Reward');
+  await expect(page.locator('#uploaded-file')).toHaveText('PAGE2\n');
+  await expect(readFile(result.uploadedFilePath, 'utf8')).resolves.toBe('PAGE2\n');
 });
 
 test('fails clearly when no active voucher rows below threshold are available for upload', async ({

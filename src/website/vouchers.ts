@@ -82,6 +82,7 @@ const DEFAULT_NAVIGATION_TIMEOUT_MS = 30_000;
 const DEFAULT_TABLE_TIMEOUT_MS = 30_000;
 const REQUIRED_HEADERS = ['display name', 'remaining', 'total', 'status'];
 const FILE_CHOOSER_TIMEOUT_MS = 1_000;
+const UPLOAD_CONTROL_TIMEOUT_MS = 30_000;
 const OMIO_VOUCHERS_BULK_JOB_ID_PATTERN =
   /(?:^|_)jobId_([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:_|$)/;
 
@@ -269,6 +270,45 @@ export async function readActiveVoucherRows(
   page: Page,
   tableTimeoutMs = DEFAULT_TABLE_TIMEOUT_MS,
 ): Promise<ActiveVoucherRow[]> {
+  const rows: ActiveVoucherRow[] = [];
+  const seenRows = new Set<string>();
+  const seenPages = new Set<string>();
+  const deadline = Date.now() + tableTimeoutMs;
+
+  while (Date.now() <= deadline) {
+    const currentPageRows = await readActiveVoucherRowsFromCurrentPage(
+      page,
+      Math.max(deadline - Date.now(), 1),
+    );
+    const pageKey = await getVoucherTablePageKey(page, currentPageRows);
+
+    if (!seenPages.has(pageKey)) {
+      seenPages.add(pageKey);
+
+      for (const row of currentPageRows) {
+        const rowKey = `${row.displayName}\u0000${row.remaining}\u0000${row.total}`;
+
+        if (!seenRows.has(rowKey)) {
+          seenRows.add(rowKey);
+          rows.push(row);
+        }
+      }
+    }
+
+    if (!(await clickVoucherTablePaginationButton(page, 'next'))) {
+      break;
+    }
+  }
+
+  await goToFirstVoucherTablePage(page);
+
+  return rows;
+}
+
+async function readActiveVoucherRowsFromCurrentPage(
+  page: Page,
+  tableTimeoutMs: number,
+): Promise<ActiveVoucherRow[]> {
   const table = await readVoucherTableModel(page, tableTimeoutMs);
   const headerIndexes = getHeaderIndexes(table.headers);
 
@@ -446,6 +486,7 @@ async function readVoucherTableModel(
   const deadline = Date.now() + timeoutMs;
   const tableCandidates = page.locator('table, [role="table"], [role="grid"]');
   const seenHeaderSets = new Set<string>();
+  let emptyTableWithRequiredHeaders: VoucherTableModel | null = null;
 
   while (Date.now() <= deadline) {
     const candidateCount = await tableCandidates.count();
@@ -465,11 +506,19 @@ async function readVoucherTableModel(
       }
 
       if (hasRequiredHeaders(normalizedHeaders)) {
-        return table;
+        if (table.rows.length > 0) {
+          return table;
+        }
+
+        emptyTableWithRequiredHeaders = table;
       }
     }
 
     await page.waitForTimeout(250);
+  }
+
+  if (emptyTableWithRequiredHeaders) {
+    return emptyTableWithRequiredHeaders;
   }
 
   const foundHeaders =
@@ -510,6 +559,41 @@ async function findVoucherTableRowByDisplayName(
   timeoutMs: number,
 ): Promise<Locator> {
   const deadline = Date.now() + timeoutMs;
+  const seenPages = new Set<string>();
+
+  await goToFirstVoucherTablePage(page);
+
+  while (Date.now() <= deadline) {
+    const pageKey = await getVoucherTablePageKey(page);
+
+    if (!seenPages.has(pageKey)) {
+      seenPages.add(pageKey);
+
+      const row = await findVoucherTableRowByDisplayNameOnCurrentPage(
+        page,
+        displayName,
+        Math.max(deadline - Date.now(), 1),
+      );
+
+      if (row) {
+        return row;
+      }
+    }
+
+    if (!(await clickVoucherTablePaginationButton(page, 'next'))) {
+      break;
+    }
+  }
+
+  throw new Error(`Braze voucher table row "${displayName}" was not visible.`);
+}
+
+async function findVoucherTableRowByDisplayNameOnCurrentPage(
+  page: Page,
+  displayName: string,
+  timeoutMs: number,
+): Promise<Locator | null> {
+  const deadline = Date.now() + timeoutMs;
   const tableCandidates = page.locator('table, [role="table"], [role="grid"]');
 
   while (Date.now() <= deadline) {
@@ -541,12 +625,16 @@ async function findVoucherTableRowByDisplayName(
           return row;
         }
       }
+
+      if (rows.length > 0) {
+        return null;
+      }
     }
 
     await page.waitForTimeout(250);
   }
 
-  throw new Error(`Braze voucher table row "${displayName}" was not visible.`);
+  return null;
 }
 
 async function getVoucherTableRowLocators(
@@ -577,15 +665,132 @@ async function getVoucherTableRowLocators(
   };
 }
 
-async function uploadCsvToOpenVoucherList(page: Page, filePath: string): Promise<void> {
-  const uploadTrigger = await findVisibleLocator([
-    page.getByRole('button', { name: /upload csv/i }),
-    page.getByRole('link', { name: /upload csv/i }),
-    page.getByText(/upload csv/i),
-  ]);
-  const existingFileInput = page.locator('input[type="file"]').first();
+async function goToFirstVoucherTablePage(page: Page): Promise<void> {
+  const seenPageKeys = new Set<string>();
 
-  if (uploadTrigger) {
+  for (let attempts = 0; attempts < 100; attempts += 1) {
+    const pageKey = await getVoucherTablePageKey(page);
+
+    if (seenPageKeys.has(pageKey)) {
+      return;
+    }
+
+    seenPageKeys.add(pageKey);
+
+    if (!(await clickVoucherTablePaginationButton(page, 'previous'))) {
+      return;
+    }
+  }
+}
+
+async function clickVoucherTablePaginationButton(
+  page: Page,
+  direction: 'next' | 'previous',
+): Promise<boolean> {
+  const buttonLabel = direction === 'next' ? 'Next page' : 'Previous page';
+  const button = await findVisibleEnabledLocator([
+    page.getByRole('button', { name: new RegExp(`^${buttonLabel}$`, 'i') }),
+    page.getByRole('link', { name: new RegExp(`^${buttonLabel}$`, 'i') }),
+    page.locator(`button[aria-label="${buttonLabel}"]`),
+    page.locator(`a[aria-label="${buttonLabel}"]`),
+  ]);
+
+  if (!button) {
+    return false;
+  }
+
+  const previousPageKey = await getVoucherTablePageKey(page);
+
+  await clickAndWaitForPossibleNavigation(page, button);
+  await waitForVoucherTablePageKeyChange(page, previousPageKey);
+
+  return true;
+}
+
+async function waitForVoucherTablePageKeyChange(
+  page: Page,
+  previousPageKey: string,
+  timeoutMs = 5_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() <= deadline) {
+    const currentPageKey = await getVoucherTablePageKey(page);
+
+    if (currentPageKey !== previousPageKey) {
+      return;
+    }
+
+    await page.waitForTimeout(250);
+  }
+}
+
+async function getVoucherTablePageKey(
+  page: Page,
+  rows: ActiveVoucherRow[] = [],
+): Promise<string> {
+  const showingRowsText = await optionalText(
+    page.locator('.pagination-footer-properties__showing-text').first(),
+  );
+  const currentPage = page.locator('[aria-current="page"]').first();
+  const currentPageLabel = await optionalAttribute(currentPage, 'aria-label');
+  const currentPageText = await optionalText(currentPage);
+  const rowText =
+    rows.length > 0
+      ? rows
+          .map((row) => `${row.displayName}:${row.remaining}:${row.total}`)
+          .join('|')
+      : await firstOptionalText([
+          page.locator('table tbody tr').first(),
+          page.locator('[role="row"]').nth(1),
+          page.locator('table tr').nth(1),
+        ]);
+
+  return (
+    [showingRowsText, currentPageLabel, currentPageText, rowText]
+      .map(normalizeCellText)
+      .filter((value) => value.length > 0)
+      .join(' || ') || page.url()
+  );
+}
+
+async function uploadCsvToOpenVoucherList(page: Page, filePath: string): Promise<void> {
+  const fileInput = await waitForAttachedLocator(
+    page,
+    [
+      page.locator('#db-voucher-editor-promo-code-file-selector'),
+      page.locator('input.db-file-selector-input[type="file"]'),
+      page.locator('.db-file-selector input[type="file"]'),
+      page.locator('input[type="file"][accept*="csv" i]'),
+      page.locator('input[type="file"]'),
+    ],
+    UPLOAD_CONTROL_TIMEOUT_MS,
+  );
+  let usedAttachedFileInput = false;
+
+  if (fileInput) {
+    await fileInput.setInputFiles(filePath);
+    usedAttachedFileInput = true;
+  } else {
+    const uploadTrigger = await waitForVisibleLocator(
+      page,
+      [
+        page.locator('.db-file-selector-dropzone').getByRole('button', {
+          name: /upload csv/i,
+        }),
+        page.locator('.db-file-selector').getByRole('button', {
+          name: /upload csv/i,
+        }),
+        page.getByRole('button', { name: /upload csv/i }),
+        page.getByRole('link', { name: /upload csv/i }),
+      ],
+      UPLOAD_CONTROL_TIMEOUT_MS,
+    );
+
+    if (!uploadTrigger) {
+      throw new Error('Braze Upload CSV control was not visible.');
+    }
+
     const fileChooserPromise = page
       .waitForEvent('filechooser', { timeout: FILE_CHOOSER_TIMEOUT_MS })
       .catch(() => null);
@@ -597,19 +802,48 @@ async function uploadCsvToOpenVoucherList(page: Page, filePath: string): Promise
     if (fileChooser) {
       await fileChooser.setFiles(filePath);
     } else {
-      const fileInput = page.locator('input[type="file"]').first();
-      await fileInput.setInputFiles(filePath);
+      const fallbackFileInput = await waitForAttachedLocator(
+        page,
+        [page.locator('input[type="file"]')],
+        FILE_CHOOSER_TIMEOUT_MS,
+      );
+
+      if (!fallbackFileInput) {
+        throw new Error('Braze Upload CSV file input was not attached.');
+      }
+
+      await fallbackFileInput.setInputFiles(filePath);
     }
-  } else if (await hasAttachedLocator(existingFileInput)) {
-    await existingFileInput.setInputFiles(filePath);
-  } else {
-    throw new Error('Braze Upload CSV control was not visible.');
   }
 
-  const startUploadButton = await waitForVisibleLocator(page, [
-    page.getByRole('button', { name: /start upload/i }),
-    page.getByText(/start upload/i),
-  ]);
+  let startUploadButton = await waitForStartUploadButton(
+    page,
+    usedAttachedFileInput ? FILE_CHOOSER_TIMEOUT_MS : DEFAULT_TABLE_TIMEOUT_MS,
+  );
+
+  if (!startUploadButton && usedAttachedFileInput && fileInput) {
+    const uploadTrigger = await waitForVisibleLocator(
+      page,
+      [
+        page.locator('.db-file-selector-dropzone').getByRole('button', {
+          name: /upload csv/i,
+        }),
+        page.locator('.db-file-selector').getByRole('button', {
+          name: /upload csv/i,
+        }),
+        page.getByRole('button', { name: /upload csv/i }),
+        page.getByRole('link', { name: /upload csv/i }),
+      ],
+      FILE_CHOOSER_TIMEOUT_MS,
+    );
+
+    if (uploadTrigger) {
+      await clickAndWaitForPossibleNavigation(page, uploadTrigger);
+      await fileInput.setInputFiles(filePath);
+    }
+
+    startUploadButton = await waitForStartUploadButton(page);
+  }
 
   if (!startUploadButton) {
     throw new Error('Braze Start Upload button was not visible.');
@@ -617,9 +851,11 @@ async function uploadCsvToOpenVoucherList(page: Page, filePath: string): Promise
 
   await clickAndWaitForPossibleNavigation(page, startUploadButton);
 
-  const updateButton = await waitForVisibleLocator(page, [
-    page.getByRole('button', { name: /update list|create list|save list/i }),
-    page.getByText(/update list|create list|save list/i),
+  const updateButton = await waitForVisibleEnabledLocator(page, [
+    page.getByRole('button', { name: /^(update list|create list|save list)$/i }),
+    page
+      .locator('button')
+      .filter({ hasText: /^\s*(Update List|Create List|Save List)\s*$/i }),
   ]);
 
   if (!updateButton) {
@@ -627,6 +863,28 @@ async function uploadCsvToOpenVoucherList(page: Page, filePath: string): Promise
   }
 
   await clickAndWaitForPossibleNavigation(page, updateButton);
+}
+
+async function waitForStartUploadButton(
+  page: Page,
+  timeoutMs = DEFAULT_TABLE_TIMEOUT_MS,
+): Promise<Locator | null> {
+  return waitForVisibleEnabledLocator(
+    page,
+    [
+      page
+        .locator('[role="dialog"] .bcl-modal-footer')
+        .getByRole('button', { name: /^start upload$/i }),
+      page.locator('[role="dialog"]').getByRole('button', {
+        name: /^start upload$/i,
+      }),
+      page.getByRole('button', { name: /^start upload$/i }),
+      page
+        .locator('button')
+        .filter({ hasText: /^\s*Start Upload\s*$/i }),
+    ],
+    timeoutMs,
+  );
 }
 
 async function prepareCsvForBrazeUpload(filePath: string): Promise<string> {
@@ -774,6 +1032,45 @@ async function normalizedTextContents(locator: Locator): Promise<string[]> {
     .filter((text) => text.length > 0);
 }
 
+async function optionalText(locator: Locator): Promise<string> {
+  try {
+    if ((await locator.count()) === 0) {
+      return '';
+    }
+
+    return normalizeCellText((await locator.first().textContent()) ?? '');
+  } catch {
+    return '';
+  }
+}
+
+async function optionalAttribute(
+  locator: Locator,
+  attributeName: string,
+): Promise<string> {
+  try {
+    if ((await locator.count()) === 0) {
+      return '';
+    }
+
+    return (await locator.first().getAttribute(attributeName)) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+async function firstOptionalText(locators: Locator[]): Promise<string> {
+  for (const locator of locators) {
+    const text = await optionalText(locator);
+
+    if (text) {
+      return text;
+    }
+  }
+
+  return '';
+}
+
 function getHeaderIndexes(headers: string[]): HeaderIndexes {
   const normalizedHeaders = headers.map(normalizeHeaderText);
 
@@ -861,6 +1158,28 @@ async function hasVisibleLocator(locator: Locator): Promise<boolean> {
   return (await locator.count()) > 0 && (await isVisible(locator.first()));
 }
 
+async function hasVisibleEnabledLocator(locator: Locator): Promise<boolean> {
+  try {
+    if ((await locator.count()) === 0) {
+      return false;
+    }
+
+    const target = locator.first();
+    const ariaDisabled = await target.getAttribute('aria-disabled');
+    const dataStyle = await target.getAttribute('data-style');
+
+    return (
+      (await locator.count()) > 0 &&
+      (await target.isVisible()) &&
+      (await target.isEnabled()) &&
+      ariaDisabled !== 'true' &&
+      dataStyle !== 'disabled'
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function hasAttachedLocator(locator: Locator): Promise<boolean> {
   try {
     return (await locator.count()) > 0;
@@ -874,6 +1193,58 @@ async function findVisibleLocator(locators: Locator[]): Promise<Locator | null> 
     if (await hasVisibleLocator(locator)) {
       return locator.first();
     }
+  }
+
+  return null;
+}
+
+async function findVisibleEnabledLocator(
+  locators: Locator[],
+): Promise<Locator | null> {
+  for (const locator of locators) {
+    if (await hasVisibleEnabledLocator(locator)) {
+      return locator.first();
+    }
+  }
+
+  return null;
+}
+
+async function waitForAttachedLocator(
+  page: Page,
+  locators: Locator[],
+  timeoutMs = DEFAULT_TABLE_TIMEOUT_MS,
+): Promise<Locator | null> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() <= deadline) {
+    for (const locator of locators) {
+      if (await hasAttachedLocator(locator)) {
+        return locator.first();
+      }
+    }
+
+    await page.waitForTimeout(250);
+  }
+
+  return null;
+}
+
+async function waitForVisibleEnabledLocator(
+  page: Page,
+  locators: Locator[],
+  timeoutMs = DEFAULT_TABLE_TIMEOUT_MS,
+): Promise<Locator | null> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() <= deadline) {
+    const locator = await findVisibleEnabledLocator(locators);
+
+    if (locator) {
+      return locator;
+    }
+
+    await page.waitForTimeout(250);
   }
 
   return null;
