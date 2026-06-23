@@ -1,71 +1,88 @@
 # crm-voucher-automation
 
-## Commands
+Playwright automation for Braze Promotion Code lists and Omio vouchers bulk jobs.
 
-Run the mocked website test suite:
+The project has two live flows:
 
-```bash
-./node_modules/.bin/playwright test tests/website --project=chromium
-```
+- Replenish existing Braze Promotion Code lists whose remaining-code count is below a threshold.
+- Create a new Braze Promotion Code list from an existing Omio vouchers bulk job.
 
-Run the live replenishment flow:
+## Prerequisites
 
-```bash
-yarn omio:vouchers-bulk-replenish
-```
+- Node.js and Yarn installed locally.
+- Access to the Braze dashboard with credentials that can run the required flow.
+- Access to the Omio vouchers API for the selected environment.
+- Chromium installed for Playwright.
+- A local `.env` file with the required runtime values.
 
-Run the live replenishment flow in a visible browser:
+Live commands can create Omio jobs and upload CSV files into Braze. Check `ENV`
+carefully before running them.
 
-```bash
-yarn omio:vouchers-bulk-replenish:headed
-```
+## Install
 
-Run the live create flow:
-
-```bash
-yarn omio:vouchers-bulk-create
-```
-
-Run the live create flow in a visible browser:
+Install project dependencies:
 
 ```bash
-yarn omio:vouchers-bulk-create:headed
+yarn install
 ```
 
-Live commands require shared credentials and one environment selector:
+Install the Playwright Chromium browser if it is not already installed:
+
+```bash
+yarn playwright install
+```
+
+## Configure `.env`
+
+The project loads a local `.env` file automatically from the repository root.
+Values already set in your shell take precedence over values from `.env`.
+
+Start by reviewing the example:
+
+```bash
+sed -n '1,200p' .env.example
+```
+
+Then create your local file:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and replace placeholder values with real values for the flow you
+want to run. Do not commit `.env`; it is intentionally ignored by git.
+
+### Common Values
+
+Required for all live flows:
 
 ```bash
 LOGIN_USERNAME=
 PASSWORD=
 ENV=QA
+BRAZE_LOGIN_ALLOW_MANUAL_MFA=true
 ```
 
-These values can live in a local `.env` file in the project root. The automation
-loads `.env` automatically, and variables already set in your shell override
-values from the file.
-Before running a live command, review `.env.example` and create your own local
-`.env` file from that example configuration. Do not commit `.env`.
+`ENV=QA` uses the QA profile. `ENV=PROD` uses the production profile. The same
+`ENV` value selects both the Braze environment and the Omio vouchers API base
+URL.
 
-`ENV=QA` uses Braze environment `592d2af81b0e4d67991edb6b`.
-`ENV=PROD` uses Braze environment `577e3b2a56ec312e6058236f`.
-The current QA Omio vouchers API base URL is `http://localhost:8080/vouchers`.
+### Replenish Values
 
-Voucher checks also require the minimum remaining-code threshold:
+Required for `yarn omio:vouchers-bulk-replenish`:
 
 ```bash
 MIN_CODES_THRESHOLD=50
-```
-
-Voucher generation uses the same `ENV` value to choose the Omio API base URL.
-The replenishment command also requires the number of vouchers to create per
-low Promotion Code list:
-
-```bash
 REPLENISH_BATCH_SIZE=25
 ```
 
-The create command requires a source vouchers bulk job, the new batch size, and
-the Braze campaign/list name:
+`MIN_CODES_THRESHOLD` controls which ACTIVE Promotion Code lists are considered
+low. `REPLENISH_BATCH_SIZE` controls how many new vouchers are generated for
+each low list.
+
+### Create Values
+
+Required for `yarn omio:vouchers-bulk-create`:
 
 ```bash
 JOB_ID=97e114cb-362c-4261-b331-20d0ed16d98a
@@ -73,39 +90,87 @@ TARGET_BATCH_SIZE=25
 CAMPAIGN_NAME=20260622_campaign
 ```
 
-The Omio vouchers bulk backend accepts at most `100000` vouchers per request.
-If `REPLENISH_BATCH_SIZE` or `TARGET_BATCH_SIZE` is larger than `100000`, the
-automation splits the requested total into multiple Omio jobs and uploads each
-generated CSV to the same Braze Promotion Code list.
+`JOB_ID` is the source Omio vouchers bulk job. `CAMPAIGN_NAME` must be unique in
+Braze for the new Promotion Code list.
 
-`yarn omio:vouchers-bulk-replenish` logs into Braze first and prints the ACTIVE
-Promotion Code lists below `MIN_CODES_THRESHOLD`. If none are below the
-threshold, it exits without creating an Omio job.
+## Run Tests
 
-For each low list, the Braze display name must contain a source Omio vouchers
-bulk job id in this format:
+Run the mocked website test suite:
+
+```bash
+./node_modules/.bin/playwright test tests/website --project=chromium
+```
+
+## Run Live Flows
+
+Run the replenish flow:
+
+```bash
+yarn omio:vouchers-bulk-replenish
+```
+
+Run the replenish flow in a visible browser:
+
+```bash
+yarn omio:vouchers-bulk-replenish:headed
+```
+
+Run the create flow:
+
+```bash
+yarn omio:vouchers-bulk-create
+```
+
+Run the create flow in a visible browser:
+
+```bash
+yarn omio:vouchers-bulk-create:headed
+```
+
+## Replenish Flow
+
+`yarn omio:vouchers-bulk-replenish`:
+
+1. Logs into Braze.
+2. Reads ACTIVE Promotion Code lists.
+3. Finds lists where `Remaining < MIN_CODES_THRESHOLD`.
+4. Extracts the source Omio job id from the Braze display name.
+5. Creates, approves, waits for, and downloads new Omio voucher CSVs.
+6. Uploads each generated CSV back into the matching Braze list.
+
+For a list to be replenished, its Braze display name must contain a source Omio
+job id in this format:
 
 ```text
 ..._jobId_{jobIdHere}_...
 ```
 
-The command fetches that source job with `GET private/v3/jobs/vouchers-bulk/{jobId}`,
-reuses its `uppercaseIds` and `template`, overrides only `batchSize`, creates a
-new vouchers bulk job for each required chunk, approves each job, waits for
-completion, downloads each CSV, and uploads it back to the matching Braze
-Promotion Code list.
-Low lists whose display name does not include a matching `jobId` are logged and
-skipped.
+Lists without a matching `jobId` are logged and skipped.
 
-`yarn omio:vouchers-bulk-create` logs into Braze, opens the Promotion Codes page,
-then opens the new Promotion Code List form through the
-`Create Promotion Code List` button or the direct
-`/integrations/vouchers/new/{braze_env_id}` URL. It fills `Name` with
-`{CAMPAIGN_NAME}_jobId_{JOB_ID}` and `Code Snippet Name` with `CAMPAIGN_NAME`.
-It then fetches `GET private/v3/jobs/vouchers-bulk/{JOB_ID}`, reuses the source
-job's `uppercaseIds` and `template`, overrides only `batchSize` with
-each required chunk, creates and approves each Omio vouchers bulk job, waits for
-completion, downloads each CSV, strips a leading `voucher_code` header if
-present, and uploads the files into the new Braze Promotion Code list.
+## Create Flow
+
+`yarn omio:vouchers-bulk-create`:
+
+1. Logs into Braze.
+2. Opens the new Promotion Code List form.
+3. Sets `Name` to `{CAMPAIGN_NAME}_jobId_{JOB_ID}`.
+4. Sets `Code Snippet Name` to `CAMPAIGN_NAME`.
+5. Fetches `GET private/v3/jobs/vouchers-bulk/{JOB_ID}`.
+6. Reuses the source job's `uppercaseIds` and `template`.
+7. Creates, approves, waits for, and downloads new Omio voucher CSVs.
+8. Uploads the generated CSV files into the new Braze Promotion Code list.
+
+## Batch Size Behavior
+
+The Omio vouchers bulk backend accepts at most `100000` vouchers per request.
+If `REPLENISH_BATCH_SIZE` or `TARGET_BATCH_SIZE` is larger than `100000`, the
+automation splits the requested total into multiple Omio jobs and uploads each
+generated CSV to the same Braze Promotion Code list.
+
+## Generated Files
+
+The automation can generate local browser auth state, Playwright reports, test
+results, downloaded CSVs, and `.braze-upload.csv` files. These outputs are local
+runtime artifacts and should not be committed.
 
 Add new live automation steps as Playwright specs under `tests/manual`.
