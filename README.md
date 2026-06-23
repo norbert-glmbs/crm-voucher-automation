@@ -78,7 +78,7 @@ REPLENISH_BATCH_SIZE=25
 
 `MIN_CODES_THRESHOLD` controls which ACTIVE Promotion Code lists are considered
 low. `REPLENISH_BATCH_SIZE` controls how many new vouchers are generated for
-each low list.
+each low list. Values above `1000000` are capped to `1000000`.
 
 ### Create Values
 
@@ -162,10 +162,14 @@ Lists without a matching `jobId` are logged and skipped.
 
 ## Batch Size Behavior
 
+`REPLENISH_BATCH_SIZE` is hard-capped at `1000000`. If a larger value is
+configured, the extra amount is ignored and the replenish flow creates at most
+`1000000` vouchers for each low Braze Promotion Code list.
+
 The Omio vouchers bulk backend accepts at most `100000` vouchers per request.
-If `REPLENISH_BATCH_SIZE` or `TARGET_BATCH_SIZE` is larger than `100000`, the
-automation splits the requested total into multiple Omio jobs and uploads each
-generated CSV to the same Braze Promotion Code list.
+If the effective replenish batch size or `TARGET_BATCH_SIZE` is larger than
+`100000`, the automation splits the requested total into multiple Omio jobs and
+uploads each generated CSV to the same Braze Promotion Code list.
 
 ## Generated Files
 
