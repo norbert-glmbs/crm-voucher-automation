@@ -34,6 +34,7 @@ const DEFAULT_BRAZE_DASHBOARD_ORIGIN = 'https://dashboard-01.braze.com';
 const DEFAULT_AUTH_STATE_PATH = '.playwright/.auth/braze.json';
 const DEFAULT_MFA_TIMEOUT_MS = 120_000;
 const DEFAULT_NAVIGATION_TIMEOUT_MS = 30_000;
+const MAX_REPLENISH_BATCH_SIZE = 1_000_000;
 const BRAZE_ENV_IDS: Record<OmioEnv, string> = {
   QA: '592d2af81b0e4d67991edb6b',
   PROD: '577e3b2a56ec312e6058236f',
@@ -134,11 +135,13 @@ export function loadMinCodesThreshold(env: NodeJS.ProcessEnv = process.env): num
 export function loadReplenishBatchSize(
   env: NodeJS.ProcessEnv = process.env,
 ): number {
-  return parsePositiveInteger(
+  const batchSize = parsePositiveInteger(
     requireEnv(env, 'REPLENISH_BATCH_SIZE'),
     0,
     'REPLENISH_BATCH_SIZE',
   );
+
+  return Math.min(batchSize, MAX_REPLENISH_BATCH_SIZE);
 }
 
 export function loadOmioVouchersBulkCreateInputs(

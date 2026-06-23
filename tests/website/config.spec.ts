@@ -176,6 +176,15 @@ test('loads the replenish batch size', () => {
   expect(loadReplenishBatchSize({ REPLENISH_BATCH_SIZE: '25' })).toBe(25);
 });
 
+test('caps the replenish batch size at one million', () => {
+  expect(loadReplenishBatchSize({ REPLENISH_BATCH_SIZE: '1000000' })).toBe(
+    1_000_000,
+  );
+  expect(loadReplenishBatchSize({ REPLENISH_BATCH_SIZE: '1000001' })).toBe(
+    1_000_000,
+  );
+});
+
 test('requires the replenish batch size', () => {
   expect(() => loadReplenishBatchSize({})).toThrow(
     'Missing required environment variable: REPLENISH_BATCH_SIZE',
@@ -237,7 +246,9 @@ test('requires the target batch size to be a positive integer', () => {
 });
 
 test('builds the Omio QA vouchers base URL', () => {
-  expect(buildOmioVouchersBaseUrl('QA')).toBe('http://localhost:8080/vouchers');
+  expect(buildOmioVouchersBaseUrl('QA')).toBe(
+    'https://www.omio.com.qa.goeuro.ninja/vouchers',
+  );
 });
 
 test('builds the Omio production vouchers base URL', () => {
@@ -253,7 +264,7 @@ test('loads Omio voucher API config for QA', () => {
     }),
   ).toEqual({
     omioEnv: 'QA',
-    baseUrl: 'http://localhost:8080/vouchers',
+    baseUrl: 'https://www.omio.com.qa.goeuro.ninja/vouchers',
     username: 'client-id',
     password: 'client-secret',
   });
@@ -283,7 +294,7 @@ test('normalizes environment casing', () => {
     }),
   ).toEqual({
     omioEnv: 'QA',
-    baseUrl: 'http://localhost:8080/vouchers',
+    baseUrl: 'https://www.omio.com.qa.goeuro.ninja/vouchers',
     username: 'client-id',
     password: 'client-secret',
   });
