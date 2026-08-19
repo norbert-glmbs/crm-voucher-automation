@@ -10,6 +10,7 @@ import {
   printActiveVoucherRowsBelowThreshold,
   readActiveVoucherRows,
   uploadCsvToActiveVoucherRowBelowThresholdFromBraze,
+  uploadCsvToActiveVoucherRowFromBraze,
   uploadCsvToOpenPromotionCodeListFromBraze,
 } from '../../src/website/vouchers';
 
@@ -155,6 +156,38 @@ test('reads active voucher rows from the Braze data grid table', async ({ page }
       displayName: '20260622_campaign_v6_jobId_72291392-bfa1-4285-9806-9d1d2d51b662',
       remaining: '10',
       total: '10',
+    },
+  ]);
+});
+
+test('retains a list detail URL when its display-name link includes Braze tags', async ({
+  page,
+}) => {
+  await page.route('https://braze.example/vouchers', async (route) => {
+    await route.fulfill({
+      contentType: 'text/html',
+      body: `
+        <table>
+          <thead><tr><th>Display Name</th><th>Status</th><th>Remaining</th><th>Total</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><a href="/integrations/vouchers/list-123"><span>Onboarding</span><span>Activation</span>Campaign Name</a></td>
+              <td>Active</td><td>8</td><td>10</td>
+            </tr>
+          </tbody>
+        </table>
+      `,
+    });
+  });
+
+  await page.goto('https://braze.example/vouchers');
+
+  await expect(readActiveVoucherRows(page, 1_000)).resolves.toEqual([
+    {
+      displayName: 'OnboardingActivationCampaign Name',
+      remaining: '8',
+      total: '10',
+      detailUrl: 'https://braze.example/integrations/vouchers/list-123',
     },
   ]);
 });
@@ -836,6 +869,56 @@ test('uploads a CSV to the first active voucher row below threshold', async ({
   expect(output).toContain('Opening Braze Promotion Code list Summer Reward');
   expect(output).toContain(`Uploading CSV ${result.uploadedFilePath}`);
   expect(output).toContain('Uploaded CSV to Braze Promotion Code list Summer Reward');
+});
+
+test('uploads directly to the detail URL captured while scanning Braze', async ({
+  page,
+}, testInfo) => {
+  const csvPath = testInfo.outputPath('direct-list-vouchers.csv');
+  await writeFile(csvPath, 'voucher_code\nDIRECT123\n', 'utf8');
+
+  await page.route('https://braze.example/vouchers/list-123', async (route) => {
+    await route.fulfill({
+      contentType: 'text/html',
+      body: `
+        <main>
+          <input id="voucher-file" type="file">
+          <button id="start-upload">Start Upload</button>
+          <button id="update-list" disabled>Update list</button>
+          <div id="uploaded-file"></div>
+          <script>
+            document.getElementById('start-upload').addEventListener('click', async () => {
+              const file = document.getElementById('voucher-file').files[0];
+              window.uploadedCsvContent = file ? await file.text() : 'missing';
+              document.getElementById('update-list').disabled = false;
+            });
+            document.getElementById('update-list').addEventListener('click', () => {
+              document.getElementById('uploaded-file').textContent = window.uploadedCsvContent;
+            });
+          </script>
+        </main>
+      `,
+    });
+  });
+
+  const targetRow = {
+    displayName: 'Later Page Reward',
+    remaining: '8',
+    total: '10',
+    detailUrl: 'https://braze.example/vouchers/list-123',
+  };
+  const result = await uploadCsvToActiveVoucherRowFromBraze(page, {
+    vouchersUrl: 'https://braze.example/vouchers',
+    filePath: csvPath,
+    targetDisplayName: targetRow.displayName,
+    targetDetailUrl: targetRow.detailUrl,
+    targetRow,
+    navigationTimeoutMs: 1_000,
+  });
+
+  expect(page.url()).toBe(targetRow.detailUrl);
+  expect(result).toMatchObject(targetRow);
+  await expect(page.locator('#uploaded-file')).toHaveText('DIRECT123\n');
 });
 
 test('uploads a CSV to the requested active voucher row below threshold', async ({
