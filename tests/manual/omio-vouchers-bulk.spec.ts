@@ -145,7 +145,7 @@ test(
           await uploadDownloadedVouchersToBrazePromotionCodeList({
             page,
             brazeConfig,
-            targetDisplayName: row.displayName,
+            targetRow: row,
             filePath: csvPath,
           });
         }
@@ -327,25 +327,27 @@ async function downloadVouchersForJob({
 async function uploadDownloadedVouchersToBrazePromotionCodeList({
   page,
   brazeConfig,
-  targetDisplayName,
+  targetRow,
   filePath,
 }: {
   page: Page;
   brazeConfig: BrazeLoginConfig;
-  targetDisplayName: ActiveVoucherRow['displayName'];
+  targetRow: ActiveVoucherRow;
   filePath: string;
 }): Promise<void> {
   const uploadResult = await uploadCsvToActiveVoucherRowFromBraze(page, {
     vouchersUrl: brazeConfig.vouchersUrl,
     filePath,
-    targetDisplayName,
+    targetDisplayName: targetRow.displayName,
+    targetDetailUrl: targetRow.detailUrl,
+    targetRow,
     navigationTimeoutMs: brazeConfig.navigationTimeoutMs,
     tableTimeoutMs: brazeConfig.navigationTimeoutMs,
     log: console.log,
   });
 
   expect(uploadResult.filePath).toBe(filePath);
-  expect(uploadResult.displayName).toBe(targetDisplayName);
+  expect(uploadResult.displayName).toBe(targetRow.displayName);
 }
 
 function sanitizeFileName(value: string): string {

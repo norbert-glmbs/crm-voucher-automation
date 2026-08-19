@@ -6,6 +6,7 @@ export type ActiveVoucherRow = {
   displayName: string;
   remaining: string;
   total: string;
+  detailUrl?: string;
 };
 
 type VoucherTableRow = ActiveVoucherRow & {
@@ -43,6 +44,8 @@ type UploadVoucherCsvOptions = PrintVoucherRowsBelowThresholdOptions & {
 type UploadActiveVoucherRowCsvOptions = PrintActiveVoucherRowsOptions & {
   filePath: string;
   targetDisplayName: string;
+  targetDetailUrl?: string;
+  targetRow?: ActiveVoucherRow;
 };
 
 type OpenNewPromotionCodeListOptions = {
@@ -166,12 +169,23 @@ export async function uploadCsvToActiveVoucherRowFromBraze(
   page: Page,
   options: UploadActiveVoucherRowCsvOptions,
 ): Promise<UploadVoucherCsvResult> {
-  await goToBrazeVouchersPage(page, options.vouchersUrl, options.navigationTimeoutMs);
+  let rowToUpdate = options.targetRow;
+  const openedTargetDetailUrl = Boolean(options.targetDetailUrl);
 
-  const activeRows = await readActiveVoucherRows(page, options.tableTimeoutMs);
-  const rowToUpdate = activeRows.find(
-    (row) => row.displayName === options.targetDisplayName,
-  );
+  if (openedTargetDetailUrl) {
+    await goToBrazeVoucherListPage(
+      page,
+      options.targetDetailUrl,
+      options.navigationTimeoutMs,
+    );
+  } else {
+    await goToBrazeVouchersPage(page, options.vouchersUrl, options.navigationTimeoutMs);
+
+    const activeRows = await readActiveVoucherRows(page, options.tableTimeoutMs);
+    rowToUpdate = activeRows.find(
+      (row) => row.displayName === options.targetDisplayName,
+    );
+  }
 
   if (!rowToUpdate) {
     throw new Error(
@@ -180,11 +194,14 @@ export async function uploadCsvToActiveVoucherRowFromBraze(
   }
 
   options.log?.(`Opening Braze Promotion Code list ${rowToUpdate.displayName}`);
-  await openVoucherTableRowByDisplayName(
-    page,
-    rowToUpdate.displayName,
-    options.tableTimeoutMs ?? DEFAULT_TABLE_TIMEOUT_MS,
-  );
+
+  if (!openedTargetDetailUrl) {
+    await openVoucherTableRowByDisplayName(
+      page,
+      rowToUpdate.displayName,
+      options.tableTimeoutMs ?? DEFAULT_TABLE_TIMEOUT_MS,
+    );
+  }
 
   const uploadedFilePath = await prepareCsvForBrazeUpload(options.filePath);
 
@@ -266,6 +283,17 @@ export async function goToBrazeVouchersPage(
   }
 }
 
+async function goToBrazeVoucherListPage(
+  page: Page,
+  detailUrl: string,
+  navigationTimeoutMs = DEFAULT_NAVIGATION_TIMEOUT_MS,
+): Promise<void> {
+  page.setDefaultTimeout(navigationTimeoutMs);
+  page.setDefaultNavigationTimeout(navigationTimeoutMs);
+
+  await page.goto(detailUrl, { waitUntil: 'domcontentloaded' });
+}
+
 export async function readActiveVoucherRows(
   page: Page,
   tableTimeoutMs = DEFAULT_TABLE_TIMEOUT_MS,
@@ -312,7 +340,7 @@ async function readActiveVoucherRowsFromCurrentPage(
   const table = await readVoucherTableModel(page, tableTimeoutMs);
   const headerIndexes = getHeaderIndexes(table.headers);
 
-  return table.rows
+  const activeRows = table.rows
     .map((cells) => readVoucherTableRow(cells, headerIndexes))
     .filter((row): row is VoucherTableRow => row !== null)
     .filter((row) => normalizeStatus(row.status) === 'active')
@@ -321,6 +349,70 @@ async function readActiveVoucherRowsFromCurrentPage(
       remaining,
       total,
     }));
+
+  return Promise.all(
+    activeRows.map(async (row) => {
+      const detailUrl = await getVoucherDetailUrlForDisplayName(page, row.displayName);
+
+      return detailUrl ? { ...row, detailUrl } : row;
+    }),
+  );
+}
+
+async function getVoucherDetailUrlForDisplayName(
+  page: Page,
+  displayName: string,
+): Promise<string | undefined> {
+  const tableCandidates = page.locator('table, [role="table"], [role="grid"]');
+  const candidateCount = await tableCandidates.count();
+
+  for (let index = 0; index < candidateCount; index += 1) {
+    const table = tableCandidates.nth(index);
+
+    if (!(await isVisible(table))) {
+      continue;
+    }
+
+    let headerIndexes: HeaderIndexes;
+
+    try {
+      headerIndexes = getHeaderIndexes((await parseTable(table)).headers);
+    } catch {
+      continue;
+    }
+
+    const { rows, cellSelector } = await getVoucherTableRowLocators(table);
+
+    for (const row of rows) {
+      const cells = await normalizedTextContents(row.locator(cellSelector));
+
+      if (readVoucherTableRow(cells, headerIndexes)?.displayName !== displayName) {
+        continue;
+      }
+
+      const link = row.locator('a[href]').first();
+
+      if ((await link.count()) === 0) {
+        continue;
+      }
+
+      const href = await link.getAttribute('href');
+
+      if (href) {
+        return resolveVoucherDetailUrl(href, page.url());
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function resolveVoucherDetailUrl(href: string, baseUrl: string): string | undefined {
+  try {
+    return new URL(href, baseUrl).toString();
+  } catch {
+    return undefined;
+  }
 }
 
 export function filterActiveVoucherRowsBelowThreshold(
@@ -701,28 +793,29 @@ async function clickVoucherTablePaginationButton(
 
   const previousPageKey = await getVoucherTablePageKey(page);
 
-  await clickAndWaitForPossibleNavigation(page, button);
-  await waitForVoucherTablePageKeyChange(page, previousPageKey);
+  await button.click();
 
-  return true;
+  return waitForVoucherTablePageKeyChange(page, previousPageKey);
 }
 
 async function waitForVoucherTablePageKeyChange(
   page: Page,
   previousPageKey: string,
   timeoutMs = 5_000,
-): Promise<void> {
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() <= deadline) {
     const currentPageKey = await getVoucherTablePageKey(page);
 
     if (currentPageKey !== previousPageKey) {
-      return;
+      return true;
     }
 
     await page.waitForTimeout(250);
   }
+
+  return false;
 }
 
 async function getVoucherTablePageKey(
