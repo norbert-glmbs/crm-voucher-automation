@@ -160,7 +160,7 @@ test('reads active voucher rows from the Braze data grid table', async ({ page }
   ]);
 });
 
-test('retains a list detail URL when its display-name link includes Braze tags', async ({
+test('uses the list link name when a Braze display-name cell includes tags', async ({
   page,
 }) => {
   await page.route('https://braze.example/vouchers', async (route) => {
@@ -171,7 +171,10 @@ test('retains a list detail URL when its display-name link includes Braze tags',
           <thead><tr><th>Display Name</th><th>Status</th><th>Remaining</th><th>Total</th></tr></thead>
           <tbody>
             <tr>
-              <td><a href="/integrations/vouchers/list-123"><span>Onboarding</span><span>Activation</span>Campaign Name</a></td>
+              <td>
+                <div><span>Onboarding</span><span>Activation</span><span>new users voucher</span></div>
+                <a href="/integrations/vouchers/list-123">Campaign Name</a>
+              </td>
               <td>Active</td><td>8</td><td>10</td>
             </tr>
           </tbody>
@@ -184,7 +187,7 @@ test('retains a list detail URL when its display-name link includes Braze tags',
 
   await expect(readActiveVoucherRows(page, 1_000)).resolves.toEqual([
     {
-      displayName: 'OnboardingActivationCampaign Name',
+      displayName: 'Campaign Name',
       remaining: '8',
       total: '10',
       detailUrl: 'https://braze.example/integrations/vouchers/list-123',

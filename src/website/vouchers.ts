@@ -1120,9 +1120,28 @@ async function textRows(
 }
 
 async function normalizedTextContents(locator: Locator): Promise<string[]> {
-  return (await locator.allTextContents())
-    .map(normalizeCellText)
-    .filter((text) => text.length > 0);
+  const elements = await locator.all();
+
+  return (
+    await Promise.all(elements.map((element) => normalizedTextContent(element)))
+  ).filter((text) => text.length > 0);
+}
+
+async function normalizedTextContent(locator: Locator): Promise<string> {
+  // Braze renders list tags in the same Display Name cell as the list link.
+  // The link contains the actual list name; using the cell text would prefix it
+  // with tags such as "OnboardingActivationnew users voucher".
+  const link = locator.locator('a[href]').first();
+
+  if ((await link.count()) > 0) {
+    const linkText = normalizeCellText((await link.textContent()) ?? '');
+
+    if (linkText) {
+      return linkText;
+    }
+  }
+
+  return normalizeCellText((await locator.textContent()) ?? '');
 }
 
 async function optionalText(locator: Locator): Promise<string> {
