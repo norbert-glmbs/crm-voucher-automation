@@ -115,6 +115,12 @@ Run the replenish flow in a visible browser:
 yarn omio:vouchers-bulk-replenish:headed
 ```
 
+Run the selected-list replenish flow:
+
+```bash
+yarn omio:vouchers-bulk-replenish-selected
+```
+
 Run the create flow:
 
 ```bash
@@ -146,6 +152,30 @@ job id in this format:
 ```
 
 Lists without a matching `jobId` are logged and skipped.
+
+## Selected Replenish Flow
+
+`yarn omio:vouchers-bulk-replenish-selected` replenishes only the active Braze
+Promotion Code lists configured in `.env`, in the listed order. It does not
+inspect `Remaining` or use `MIN_CODES_THRESHOLD`. Each campaign name must exactly
+match a Braze Promotion Code list display name and each entry provides its own
+batch size:
+
+```bash
+SELECTED_REPLENISHMENT_CAMPAIGNS='[
+  {
+    "campaignName": "summer_reward_jobId_97e114cb-362c-4261-b331-20d0ed16d98a",
+    "batchSize": 50
+  },
+  {
+    "campaignName": "welcome_credit_jobId_72291392-bfa1-4285-9806-9d1d2d51b662",
+    "batchSize": 100
+  }
+]'
+```
+
+Duplicate names, missing or inactive lists, and lists without a source job id
+cause the run to fail before a voucher job is created for that entry.
 
 ## Create Flow
 

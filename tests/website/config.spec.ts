@@ -11,6 +11,7 @@ import {
   loadEnvFileIntoProcessEnv,
   loadMinCodesThreshold,
   loadOmioVoucherApiConfig,
+  loadOmioVouchersBulkSelectedReplenishments,
   loadOmioVouchersBulkCreateInputs,
   loadReplenishBatchSize,
 } from '../../src/config';
@@ -82,6 +83,27 @@ test(
     });
   },
 );
+
+test('loads a multiline quoted value from a dotenv file', async ({}, testInfo) => {
+  const env: NodeJS.ProcessEnv = {};
+  const envPath = testInfo.outputPath('multiline-config.env');
+
+  await writeFile(
+    envPath,
+    [
+      "SELECTED_REPLENISHMENT_CAMPAIGNS='[",
+      '  {"campaignName":"Campaign one","batchSize":25}',
+      "]'",
+    ].join('\n'),
+    'utf8',
+  );
+
+  loadEnvFileIntoProcessEnv(envPath, env);
+
+  expect(loadOmioVouchersBulkSelectedReplenishments(env)).toEqual([
+    { campaignName: 'Campaign one', batchSize: 25 },
+  ]);
+});
 
 test('loads Braze login config from ENV=QA', () => {
   const config = loadBrazeLoginConfig({
@@ -183,6 +205,39 @@ test('caps the replenish batch size at one million', () => {
   expect(loadReplenishBatchSize({ REPLENISH_BATCH_SIZE: '1000001' })).toBe(
     1_000_000,
   );
+});
+
+test('loads selected replenishments in their configured order', () => {
+  expect(
+    loadOmioVouchersBulkSelectedReplenishments({
+      SELECTED_REPLENISHMENT_CAMPAIGNS: JSON.stringify([
+        { campaignName: 'First campaign', batchSize: 25 },
+        { campaignName: 'Second campaign', batchSize: 100 },
+      ]),
+    }),
+  ).toEqual([
+    { campaignName: 'First campaign', batchSize: 25 },
+    { campaignName: 'Second campaign', batchSize: 100 },
+  ]);
+});
+
+test('validates selected replenishments', () => {
+  expect(() => loadOmioVouchersBulkSelectedReplenishments({})).toThrow(
+    'Missing required environment variable: SELECTED_REPLENISHMENT_CAMPAIGNS',
+  );
+  expect(() =>
+    loadOmioVouchersBulkSelectedReplenishments({
+      SELECTED_REPLENISHMENT_CAMPAIGNS: '[{"campaignName":"Campaign","batchSize":0}]',
+    }),
+  ).toThrow('SELECTED_REPLENISHMENT_CAMPAIGNS[0].batchSize must be a positive integer');
+  expect(() =>
+    loadOmioVouchersBulkSelectedReplenishments({
+      SELECTED_REPLENISHMENT_CAMPAIGNS: JSON.stringify([
+        { campaignName: 'Campaign', batchSize: 1 },
+        { campaignName: 'Campaign', batchSize: 1 },
+      ]),
+    }),
+  ).toThrow('Selected replenishment campaign name is duplicated');
 });
 
 test('requires the replenish batch size', () => {

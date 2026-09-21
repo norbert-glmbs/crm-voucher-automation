@@ -30,6 +30,11 @@ export type OmioVouchersBulkCreateInputs = {
   codeSnippetName: string;
 };
 
+export type OmioVouchersBulkSelectedReplenishment = {
+  campaignName: string;
+  batchSize: number;
+};
+
 const DEFAULT_BRAZE_DASHBOARD_ORIGIN = 'https://dashboard-01.braze.com';
 const DEFAULT_AUTH_STATE_PATH = '.playwright/.auth/braze.json';
 const DEFAULT_MFA_TIMEOUT_MS = 120_000;
@@ -62,7 +67,10 @@ export function loadEnvFileIntoProcessEnv(
     throw error;
   }
 
-  for (const rawLine of rawEnvFile.split(/\r?\n/)) {
+  const rawLines = rawEnvFile.split(/\r?\n/);
+
+  for (let lineIndex = 0; lineIndex < rawLines.length; lineIndex += 1) {
+    const rawLine = rawLines[lineIndex];
     const line = rawLine.trim();
 
     if (!line || line.startsWith('#')) {
@@ -82,7 +90,14 @@ export function loadEnvFileIntoProcessEnv(
       continue;
     }
 
-    env[key] = parseEnvFileValue(envLine.slice(equalsIndex + 1));
+    let rawValue = envLine.slice(equalsIndex + 1);
+
+    while (hasUnclosedQuotedValue(rawValue) && lineIndex + 1 < rawLines.length) {
+      lineIndex += 1;
+      rawValue += `\n${rawLines[lineIndex]}`;
+    }
+
+    env[key] = parseEnvFileValue(rawValue);
   }
 }
 
@@ -142,6 +157,92 @@ export function loadReplenishBatchSize(
   );
 
   return Math.min(batchSize, MAX_REPLENISH_BATCH_SIZE);
+}
+
+export function loadOmioVouchersBulkSelectedReplenishments(
+  env: NodeJS.ProcessEnv = process.env,
+): OmioVouchersBulkSelectedReplenishment[] {
+  return parseSelectedReplenishmentsJson(
+    requireNonEmptyEnv(env, 'SELECTED_REPLENISHMENT_CAMPAIGNS'),
+  );
+}
+
+function parseSelectedReplenishmentsJson(
+  value: string,
+): OmioVouchersBulkSelectedReplenishment[] {
+  let parsedValue: unknown;
+
+  try {
+    parsedValue = JSON.parse(value);
+  } catch {
+    throw new Error(
+      'SELECTED_REPLENISHMENT_CAMPAIGNS must be a JSON array of { campaignName, batchSize } objects',
+    );
+  }
+
+  if (!Array.isArray(parsedValue) || parsedValue.length === 0) {
+    throw new Error(
+      'SELECTED_REPLENISHMENT_CAMPAIGNS must be a non-empty JSON array',
+    );
+  }
+
+  const selectedReplenishments = parsedValue.map((entry, index) => {
+    const entryLabel = `SELECTED_REPLENISHMENT_CAMPAIGNS[${index}]`;
+
+    if (!isRecord(entry)) {
+      throw new Error(`${entryLabel} must be an object`);
+    }
+
+    return createSelectedReplenishment(
+      entry.campaignName,
+      entry.batchSize,
+      entryLabel,
+    );
+  });
+
+  validateUniqueSelectedReplenishmentCampaignNames(selectedReplenishments);
+
+  return selectedReplenishments;
+}
+
+function createSelectedReplenishment(
+  campaignNameValue: unknown,
+  batchSizeValue: unknown,
+  entryLabel: string,
+): OmioVouchersBulkSelectedReplenishment {
+  if (typeof campaignNameValue !== 'string' || !campaignNameValue.trim()) {
+    throw new Error(`${entryLabel}.campaignName must be a non-empty string`);
+  }
+
+  const batchSize =
+    typeof batchSizeValue === 'number'
+      ? batchSizeValue
+      : Number(batchSizeValue);
+
+  if (!Number.isInteger(batchSize) || batchSize <= 0) {
+    throw new Error(`${entryLabel}.batchSize must be a positive integer`);
+  }
+
+  return {
+    campaignName: campaignNameValue.trim(),
+    batchSize: Math.min(batchSize, MAX_REPLENISH_BATCH_SIZE),
+  };
+}
+
+function validateUniqueSelectedReplenishmentCampaignNames(
+  selectedReplenishments: OmioVouchersBulkSelectedReplenishment[],
+): void {
+  const campaignNames = new Set<string>();
+
+  for (const selectedReplenishment of selectedReplenishments) {
+    if (campaignNames.has(selectedReplenishment.campaignName)) {
+      throw new Error(
+        `Selected replenishment campaign name is duplicated: ${selectedReplenishment.campaignName}`,
+      );
+    }
+
+    campaignNames.add(selectedReplenishment.campaignName);
+  }
 }
 
 export function loadOmioVouchersBulkCreateInputs(
@@ -341,6 +442,17 @@ function parseEnvFileValue(value: string): string {
   return trimmedValue.replace(/\s+#.*$/, '');
 }
 
+function hasUnclosedQuotedValue(value: string): boolean {
+  const trimmedValue = value.trim();
+  const quote = trimmedValue[0];
+
+  return (quote === '"' || quote === "'") && !trimmedValue.endsWith(quote);
+}
+
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
