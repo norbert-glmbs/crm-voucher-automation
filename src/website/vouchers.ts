@@ -25,6 +25,8 @@ type VoucherTableModel = {
   rows: string[][];
 };
 
+type LocatedVoucherTableModel = VoucherTableModel & { locator: Locator };
+
 type PrintActiveVoucherRowsOptions = {
   vouchersUrl: string;
   navigationTimeoutMs?: number;
@@ -301,36 +303,33 @@ export async function readActiveVoucherRows(
   const rows: ActiveVoucherRow[] = [];
   const seenRows = new Set<string>();
   const seenPages = new Set<string>();
-  const deadline = Date.now() + tableTimeoutMs;
 
-  while (Date.now() <= deadline) {
-    const currentPageRows = await readActiveVoucherRowsFromCurrentPage(
-      page,
-      Math.max(deadline - Date.now(), 1),
-    );
+  for (let pageCount = 0; pageCount < 100; pageCount += 1) {
+    const currentPageRows = await readActiveVoucherRowsFromCurrentPage(page, tableTimeoutMs);
     const pageKey = await getVoucherTablePageKey(page, currentPageRows);
 
-    if (!seenPages.has(pageKey)) {
-      seenPages.add(pageKey);
+    if (seenPages.has(pageKey)) {
+      throw new Error('Braze voucher table returned to a page that was already read.');
+    }
 
-      for (const row of currentPageRows) {
-        const rowKey = `${row.displayName}\u0000${row.remaining}\u0000${row.total}`;
+    seenPages.add(pageKey);
 
-        if (!seenRows.has(rowKey)) {
-          seenRows.add(rowKey);
-          rows.push(row);
-        }
+    for (const row of currentPageRows) {
+      const rowKey = `${row.displayName}\u0000${row.remaining}\u0000${row.total}`;
+
+      if (!seenRows.has(rowKey)) {
+        seenRows.add(rowKey);
+        rows.push(row);
       }
     }
 
-    if (!(await clickVoucherTablePaginationButton(page, 'next'))) {
-      break;
+    if (!(await clickVoucherTablePaginationButton(page, 'next', tableTimeoutMs))) {
+      await goToFirstVoucherTablePage(page);
+      return rows;
     }
   }
 
-  await goToFirstVoucherTablePage(page);
-
-  return rows;
+  throw new Error('Braze voucher table exceeded 100 pages while reading ACTIVE lists.');
 }
 
 async function readActiveVoucherRowsFromCurrentPage(
@@ -349,62 +348,35 @@ async function readActiveVoucherRowsFromCurrentPage(
       remaining,
       total,
     }));
+  const detailUrls = await getVoucherDetailUrls(table.locator, page.url());
 
-  return Promise.all(
-    activeRows.map(async (row) => {
-      const detailUrl = await getVoucherDetailUrlForDisplayName(page, row.displayName);
-
-      return detailUrl ? { ...row, detailUrl } : row;
-    }),
-  );
+  return activeRows.map((row) => {
+    const detailUrl = detailUrls.get(row.displayName);
+    return detailUrl ? { ...row, detailUrl } : row;
+  });
 }
 
-async function getVoucherDetailUrlForDisplayName(
-  page: Page,
-  displayName: string,
-): Promise<string | undefined> {
-  const tableCandidates = page.locator('table, [role="table"], [role="grid"]');
-  const candidateCount = await tableCandidates.count();
+async function getVoucherDetailUrls(
+  table: Locator,
+  baseUrl: string,
+): Promise<Map<string, string>> {
+  const links = await table.locator('a[href]').evaluateAll((anchors) =>
+    anchors.map((anchor) => ({
+      displayName: anchor.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+      href: anchor.getAttribute('href') ?? '',
+    })),
+  );
+  const detailUrls = new Map<string, string>();
 
-  for (let index = 0; index < candidateCount; index += 1) {
-    const table = tableCandidates.nth(index);
+  for (const { displayName, href } of links) {
+    const detailUrl = resolveVoucherDetailUrl(href, baseUrl);
 
-    if (!(await isVisible(table))) {
-      continue;
-    }
-
-    let headerIndexes: HeaderIndexes;
-
-    try {
-      headerIndexes = getHeaderIndexes((await parseTable(table)).headers);
-    } catch {
-      continue;
-    }
-
-    const { rows, cellSelector } = await getVoucherTableRowLocators(table);
-
-    for (const row of rows) {
-      const cells = await normalizedTextContents(row.locator(cellSelector));
-
-      if (readVoucherTableRow(cells, headerIndexes)?.displayName !== displayName) {
-        continue;
-      }
-
-      const link = row.locator('a[href]').first();
-
-      if ((await link.count()) === 0) {
-        continue;
-      }
-
-      const href = await link.getAttribute('href');
-
-      if (href) {
-        return resolveVoucherDetailUrl(href, page.url());
-      }
+    if (displayName && href && detailUrl) {
+      detailUrls.set(displayName, detailUrl);
     }
   }
 
-  return undefined;
+  return detailUrls;
 }
 
 function resolveVoucherDetailUrl(href: string, baseUrl: string): string | undefined {
@@ -574,11 +546,11 @@ async function fillNewPromotionCodeListFields(
 async function readVoucherTableModel(
   page: Page,
   timeoutMs: number,
-): Promise<VoucherTableModel> {
+): Promise<LocatedVoucherTableModel> {
   const deadline = Date.now() + timeoutMs;
   const tableCandidates = page.locator('table, [role="table"], [role="grid"]');
   const seenHeaderSets = new Set<string>();
-  let emptyTableWithRequiredHeaders: VoucherTableModel | null = null;
+  let emptyTableWithRequiredHeaders: LocatedVoucherTableModel | null = null;
 
   while (Date.now() <= deadline) {
     const candidateCount = await tableCandidates.count();
@@ -599,10 +571,10 @@ async function readVoucherTableModel(
 
       if (hasRequiredHeaders(normalizedHeaders)) {
         if (table.rows.length > 0) {
-          return table;
+          return { ...table, locator: candidate };
         }
 
-        emptyTableWithRequiredHeaders = table;
+        emptyTableWithRequiredHeaders = { ...table, locator: candidate };
       }
     }
 
@@ -778,6 +750,7 @@ async function goToFirstVoucherTablePage(page: Page): Promise<void> {
 async function clickVoucherTablePaginationButton(
   page: Page,
   direction: 'next' | 'previous',
+  timeoutMs = DEFAULT_TABLE_TIMEOUT_MS,
 ): Promise<boolean> {
   const buttonLabel = direction === 'next' ? 'Next page' : 'Previous page';
   const button = await findVisibleEnabledLocator([
@@ -792,23 +765,41 @@ async function clickVoucherTablePaginationButton(
   }
 
   const previousPageKey = await getVoucherTablePageKey(page);
+  const previousFirstRow = await getVoucherTableFirstRowText(page);
 
   await button.click();
 
-  return waitForVoucherTablePageKeyChange(page, previousPageKey);
+  if (
+    !(await waitForVoucherTablePageKeyChange(
+      page,
+      previousPageKey,
+      previousFirstRow,
+      timeoutMs,
+    ))
+  ) {
+    throw new Error(`Braze voucher table did not load after clicking ${buttonLabel}.`);
+  }
+
+  return true;
 }
 
 async function waitForVoucherTablePageKeyChange(
   page: Page,
   previousPageKey: string,
-  timeoutMs = 5_000,
+  previousFirstRow: string,
+  timeoutMs: number,
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() <= deadline) {
     const currentPageKey = await getVoucherTablePageKey(page);
+    const currentFirstRow = await getVoucherTableFirstRowText(page);
 
-    if (currentPageKey !== previousPageKey) {
+    if (
+      currentPageKey !== previousPageKey &&
+      currentFirstRow &&
+      currentFirstRow !== previousFirstRow
+    ) {
       return true;
     }
 
@@ -816,6 +807,14 @@ async function waitForVoucherTablePageKeyChange(
   }
 
   return false;
+}
+
+async function getVoucherTableFirstRowText(page: Page): Promise<string> {
+  return firstOptionalText([
+    page.locator('table tbody tr').first(),
+    page.locator('[role="row"]').nth(1),
+    page.locator('table tr').nth(1),
+  ]);
 }
 
 async function getVoucherTablePageKey(
